@@ -1,7 +1,70 @@
-
 #Global Variables that are gonna be important for generating the output TAC
-registers = {} #keys are all gonna be numbers
+used_registers = [] #sorted list of all used temporaries
+variable_lookup = {} #mapping token names to their register numbers
+
 output_json = []
+error_log = []
+
+
+###SOME helper functions for interfacing between the global variables and the conversion functions
+def add_entry(entry):
+    global output_json
+
+    output_json[0]["body"].append(entry)
+
+def add_error(error):
+    global error_log
+
+    error_log.append(error)
+
+def new_entry(opcode, argslist, register_num):
+    #generate the fields of an entry
+    entry = {}
+    entry["opcode"] = opcode
+    entry["args"]  = argslist
+
+    #-1 target registry is code for "discard result"
+    if register_num >= 0 :
+        entry["result"] = f"%{register_num}"
+    else:
+        entry["result"] = None
+
+    return entry
+
+
+
+def new_free_register():
+
+    global used_registers
+
+    #first allocation
+    if len(used_registers) == 0:
+        used_registers.append(0)
+        return 0
+
+    #start by looking for gaps in allocated registers (ex : 1,3,4 -> 2)  
+    for i in range(1, len(used_registers)):
+        if (used_registers[i] - used_registers[i-1]) > 1:
+
+            new_reg = used_registers[i] - 1
+
+            used_registers = used_registers[:i] + [new_reg] + used_registers[i:]
+            return new_reg
+
+
+    #otherwise allocate new number
+    new_reg = used_registers[-1] + 1
+    used_registers.append(new_reg)
+    return new_reg
+
+
+def del_register(reg_num):
+    global used_registers
+
+    used_registers.remove(reg_num)
+
+
+
 
 ###ALL of the helper classes that we'll use to represent the ACT content
 class Root : 
@@ -11,14 +74,15 @@ class Root :
     def TMM(self):
         #start by cleaning the global variables
         global registers
-        global output_lines 
+        global output_json 
 
         registers = {}
         output_json = [{}]
+        
 
 
         self.procedure.TMM()
-        return output_json
+        return (output_json, error_log)
 
 
     def __str__(self):
@@ -36,7 +100,7 @@ class Procedure:
         global registers
         global output_json
 
-        output_json[0]["proc"] = "main"
+        output_json[0]["proc"] = "@main"
         output_json[0]["body"] = []
 
         for command in self.body : 
@@ -65,7 +129,16 @@ class StatementVarDecl(Statement):
         self.init = init
 
     def TMM(self):
-        pass
+        global variable_lookup 
+
+        reg = new_free_register()
+
+        #initialize that register
+        self.init.TMM(reg)
+
+        #declare that register in the variable lookup
+        variable_lookup[self.name] = reg
+
 
     def __str__(self):
         return f"Declaring {self.name}"
@@ -73,20 +146,29 @@ class StatementVarDecl(Statement):
 class StatementAssign(Statement):
     def __init__(self, lvalue, rvalue):
         self.lvalue = lvalue
-        self.rvalue = rvalue
+        self.rvalue = rvalue #always an expression ?
 
     def TMM(self):
-        pass
+        #check that our variable (lvalue) name is in the lookup
+        if not self.lvalue  in variable_lookup.keys():
+            add_error(f"Variable name {self.lvalue} used without being declared.")
+            return
+
+        #if that's the case, store the result of the computation in it 
+        var_reg = variable_lookup[self.lvalue]
+        self.rvalue.TMM(var_reg)
+             
 
     def __str__(self):
         return f"{str(self.lvalue)} = {str(self.rvalue)}"
+
 
 class StatementEval(Statement):
     def __init__(self, expression):
         self.expression = expression
 
     def TMM(self):
-        pass
+        self.expression.TMM()
 
     def __str__(self):
         return str(self.expression)
@@ -103,27 +185,46 @@ class ExpressionCall(Expression):
         self.argument = argument
 
     def TMM(self):
-        pass
+        #evaluate the argument
+        argument_reg = new_free_register()
+        self.argument.TMM(argument_reg)
+
+        #call the function with that argument
+        add_entry(new_entry("print", [f"%{argument_reg}"], -1) )
+
+        #delete the temp register we used for the argument
+        del_register(argument_reg)
+
 
     def __str__(self):
         return f"Calling {self.target} with argument : {self.argument}"
+
 
 class ExpressionVar(Expression):
     def __init__(self, name):
         self.name = name
 
-    def TMM(self):
-        pass
+    def TMM(self, target_reg):
+        #start by getting the register number of our var
+        if not self.name in variable_lookup.keys() :
+            add_error(f"Variable name {self.name} used without being declared.")
+        
+        var_reg = variable_lookup[self.name]
+
+        #then copy that register value onto our target
+        add_entry(new_entry("copy", [f"%{var_reg}"], target_reg))
 
     def __str__(self):
         return self.name
+
 
 class ExpressionInt(Expression):
     def __init__(self, value):
         self.value = value
     
-    def TMM(self):
-        pass
+    def TMM(self, target_reg):
+        #easy peasy
+        add_entry(new_entry("const", [self.value], target_reg))
 
     def __str__(self):
         return str(self.value)
@@ -133,8 +234,15 @@ class ExpressionUniOp(Expression):
         self.operator = operator
         self.argument = argument
 
-    def TMM(self):
-        pass
+    def TMM(self, target_reg):
+        #evaluate argument
+        arg_reg = new_free_register()
+        self.argument.TMM(arg_reg)
+
+        add_entry(new_entry(self.operator, [f"{arg_reg}"], target_reg))
+
+        #delete temp reg
+        del_register(arg_reg)
 
     def __str__(self):
         return f"({self.operator} {str(self.argument)})"
@@ -145,8 +253,20 @@ class ExpressionBinOp(Expression):
         self.left = left
         self.right = right
     
-    def TMM(self):
-        pass
+    def TMM(self, target_reg):
+        #evaluate arguments
+        left_reg  = new_free_register()
+        right_reg = new_free_register()
+
+        self.left.TMM(left_reg)
+        self.right.TMM(right_reg)
+
+        add_entry(new_entry(self.operator, [f"%{left_reg}", f"%{right_reg}"], target_reg))
+
+        #delete temps regs
+        del_register(left_reg)
+        del_register(right_reg)
+
 
     def __str__(self):
         return f"{str(self.left)} {self.operator} {str(self.right)}"
@@ -172,8 +292,8 @@ def json_to_AST(json_obj, is_root = False):
     #otherwise cycle through the names
     obj_type = json_obj[0]
 
-    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa")
-    print(obj_type)
+
+
     if obj_type == "<decl:proc>":
 
         name = json_to_name(json_obj[1]["name"])

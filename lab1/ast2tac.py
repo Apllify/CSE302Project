@@ -5,6 +5,8 @@ from ASTHelper import * #the file that holds all of our object form json
 """
 FLAWS that I should eventually fix : 
 - Call expression only handles one expression at the moment
+--> In order to refactor, you need to change both its class representation to have a list
+--> But also its TMM method that only assumes that one argument is present 
 """
 
 
@@ -51,12 +53,15 @@ if __name__ == "__main__" :
 
     #convert the json file to a better format
     ast_object = json_to_AST(json_object, True)
-    print(str(ast_object))
 
 
     #now run the command that's gonna generate (only tmm supported for now)
     if flag == "tmm":
-        TAC_code_lines = ast_object.TMM()
+        TAC_code_lines, errors = ast_object.TMM()
+        print("-------------------------------------------")
+        print(json.dumps(TAC_code_lines))
+        print("-------------------------------------------\n\n\n")
+
  
 
 
