@@ -16,39 +16,58 @@ FLAWS that I should eventually fix :
 if __name__ == "__main__" : 
     
     cmd_inputs = sys.argv
-    filepath_index = 1
 
     json_file_path = ""
     json_object = None
+
     flag = "tmm"
+
+    output_filepath = ""
+    output_filepath_index = 2
+
 
 
     if len(cmd_inputs) == 1:
-        raise Exception("Argument Error : No file path provided.")
+        raise Exception("Argument Error : No source file path provided.")
     
-    #case where we received an execution flag
-    if cmd_inputs[1][:2] == "--":
 
-        filepath_index = 2
-        input_flag = cmd_inputs[1][2:]
+
+
+
+
+        
+    #load the ast json file
+    json_file_path = cmd_inputs[1]
+    try : 
+        with open(json_file_path, "r") as ast_file:
+            json_object = json.load(ast_file)
+    except: 
+        raise Exception("File Error : Provided Json file could not be loaded.")
+
+    #get the input flag
+    if cmd_inputs[2][0] == "-":
+
+        output_filepath_index = 3
+        
+        input_flag = cmd_inputs[2][1:]
+        while input_flag[0] == "-":
+            input_flag = input_flag[1:]  
+
 
         if input_flag in ("tmm", "bmm"):
             flag = input_flag
         else:
             raise Exception("Argument Error : Unrecognized flag.")
 
-    #check that we haven't been given too many arguments
-    if len(cmd_inputs) > (filepath_index + 1):
-        print("Warning : Too many arguments provided, ignoring all extra arguments.")
 
-        
-    #now finally load the ast json file
-    json_file_path = cmd_inputs[filepath_index]
-    try : 
-        with open(json_file_path, "r") as ast_file:
-            json_object = json.load(ast_file)
-    except: 
-        raise Exception("File Error : Provided Json file could not be loaded.")
+
+    #load the output filepath
+    output_filepath = cmd_inputs[output_filepath_index]
+
+
+    #check that we haven't been given too many arguments
+    if len(cmd_inputs) > (output_filepath_index + 1):
+        print("Warning : Too many arguments provided, ignoring all extra arguments.")
 
 
     #convert the json file to a better format
@@ -58,11 +77,15 @@ if __name__ == "__main__" :
     #now run the command that's gonna generate (only tmm supported for now)
     if flag == "tmm":
         TAC_code_lines, errors = ast_object.TMM()
-        print("-------------------------------------------")
-        print(json.dumps(TAC_code_lines))
-        print("-------------------------------------------\n\n\n")
+        TAC_json = json.dumps(TAC_code_lines)
+    else:
+        raise Exception("BMM not supported yet :(")
 
  
+    #write the result to the output file :D
+    with open(output_filepath, "w") as file:
+        file.write(TAC_json)
+
 
 
     #this should be at the verrrry end of the conversion

@@ -6,6 +6,22 @@ output_json = []
 error_log = []
 
 
+opcodes = {
+        "opposite": "neg",
+        "bitwise-negation":"not",
+        "addition": "add",
+        "substraction" : "sub",
+        "multiplication": "mul",
+        "division": "div",
+        "modulus" : "mod",
+        "bitwise-xor": "xor",
+        "bitwise-or" : "or",
+        "bitwise-and": "and",
+        "logical-shift-left":"shl",
+        "logical-shift-right":"shr"
+}
+
+
 ###SOME helper functions for interfacing between the global variables and the conversion functions
 def add_entry(entry):
     global output_json
@@ -30,7 +46,6 @@ def new_entry(opcode, argslist, register_num):
         entry["result"] = None
 
     return entry
-
 
 
 def new_free_register():
@@ -239,7 +254,7 @@ class ExpressionUniOp(Expression):
         arg_reg = new_free_register()
         self.argument.TMM(arg_reg)
 
-        add_entry(new_entry(self.operator, [f"{arg_reg}"], target_reg))
+        add_entry(new_entry(opcodes[self.operator], [f"{arg_reg}"], target_reg))
 
         #delete temp reg
         del_register(arg_reg)
@@ -261,7 +276,7 @@ class ExpressionBinOp(Expression):
         self.left.TMM(left_reg)
         self.right.TMM(right_reg)
 
-        add_entry(new_entry(self.operator, [f"%{left_reg}", f"%{right_reg}"], target_reg))
+        add_entry(new_entry(opcodes[self.operator], [f"%{left_reg}", f"%{right_reg}"], target_reg))
 
         #delete temps regs
         del_register(left_reg)
