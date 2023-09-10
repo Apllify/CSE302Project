@@ -76,10 +76,13 @@ if __name__ == "__main__" :
 
     #now run the command that's gonna generate (only tmm supported for now)
     if flag == "tmm":
-        TAC_code_lines, errors = ast_object.TMM()
+        TAC_code_lines = ast_object.TMM()
+        TAC_json = json.dumps(TAC_code_lines)
+    elif flag == "bmm":
+        TAC_code_lines = ast_object.BMM()
         TAC_json = json.dumps(TAC_code_lines)
     else:
-        raise Exception("BMM not supported yet :(")
+        raise ValueError("Execution flag not recognized :(")
 
  
     #write the result to the output file :D

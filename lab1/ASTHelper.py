@@ -3,14 +3,13 @@ used_registers = [] #sorted list of all used temporaries
 variable_lookup = {} #mapping token names to their register numbers
 
 output_json = []
-error_log = []
 
 
 opcodes = {
         "opposite": "neg",
         "bitwise-negation":"not",
         "addition": "add",
-        "substraction" : "sub",
+        "subtraction" : "sub",
         "multiplication": "mul",
         "division": "div",
         "modulus" : "mod",
@@ -28,10 +27,7 @@ def add_entry(entry):
 
     output_json[0]["body"].append(entry)
 
-def add_error(error):
-    global error_log
 
-    error_log.append(error)
 
 def new_entry(opcode, argslist, register_num):
     #generate the fields of an entry
@@ -76,6 +72,10 @@ def new_free_register():
 def del_register(reg_num):
     global used_registers
 
+    #do NOT allow deletion of variables, those should be deleted with a special function
+    if reg_num in variable_lookup.values():
+        return
+
     used_registers.remove(reg_num)
 
 
@@ -86,18 +86,26 @@ class Root :
     def __init__(self, procedure):
         self.procedure = procedure
 
-    def TMM(self):
-        #start by cleaning the global variables
+    def clean_slate():
         global registers
-        global output_json 
+        global output_json
 
         registers = {}
         output_json = [{}]
-        
 
+    def TMM(self):
+        #start by cleaning the global variables
+        Root.clean_slate()
 
         self.procedure.TMM()
-        return (output_json, error_log)
+        return output_json
+
+    def BMM(self):
+        Root.clean_slate()
+
+        self.procedure.BMM()
+        return output_json
+
 
 
     def __str__(self):
@@ -112,7 +120,6 @@ class Procedure:
         self.body = body
 
     def TMM(self):
-        global registers
         global output_json
 
         output_json[0]["proc"] = "@main"
@@ -121,7 +128,16 @@ class Procedure:
         for command in self.body : 
             command.TMM()
 
-         
+    def BMM(self):
+        global output_json
+
+        output_json[0]["proc"] = "@main"
+        output_json[0]["body"] = []
+
+        for command in self.body : 
+            command.BMM()
+
+        
 
 
     def __str__(self):
@@ -155,8 +171,19 @@ class StatementVarDecl(Statement):
         variable_lookup[self.name] = reg
 
 
+    def BMM(self):
+        global variable_lookup
+
+        #evaluate initialization value
+        init_reg = self.init.BMM()
+
+        #declare the variable to be that register
+        variable_lookup[self.name] = init_reg
+
+
     def __str__(self):
         return f"Declaring {self.name}"
+
 
 class StatementAssign(Statement):
     def __init__(self, lvalue, rvalue):
@@ -166,12 +193,27 @@ class StatementAssign(Statement):
     def TMM(self):
         #check that our variable (lvalue) name is in the lookup
         if not self.lvalue  in variable_lookup.keys():
-            add_error(f"Variable name {self.lvalue} used without being declared.")
-            return
+            raise LookupError(f"Variable name {self.lvalue} used without being declared.")
 
         #if that's the case, store the result of the computation in it 
         var_reg = variable_lookup[self.lvalue]
         self.rvalue.TMM(var_reg)
+
+    def BMM(self):
+        #check that our variable (lvalue) name is in the lookup
+        if not self.lvalue  in variable_lookup.keys():
+            raise LookupError(f"Variable name {self.lvalue} used without being declared.")
+
+        #now compute our rvalue
+        rvalue_reg = self.rvalue.BMM()
+        var_reg = variable_lookup[self.lvalue]
+
+        #copy that value to the variable register
+        add_entry(new_entry("copy", [f"%{rvalue_reg}"], var_reg))
+
+        #delete the copied reg
+        del_register(rvalue_reg)
+
              
 
     def __str__(self):
@@ -184,6 +226,9 @@ class StatementEval(Statement):
 
     def TMM(self):
         self.expression.TMM()
+
+    def BMM(self):
+        self.expression.BMM()
 
     def __str__(self):
         return str(self.expression)
@@ -205,10 +250,20 @@ class ExpressionCall(Expression):
         self.argument.TMM(argument_reg)
 
         #call the function with that argument
-        add_entry(new_entry("print", [f"%{argument_reg}"], -1) )
+        add_entry(new_entry(self.target, [f"%{argument_reg}"], -1) )
 
         #delete the temp register we used for the argument
         del_register(argument_reg)
+
+    def BMM(self):
+        #evaluate the argument
+        arg_reg = self.argument.BMM()
+
+        #call the function with that argument
+        add_entry(new_entry(self.target, [f"%{arg_reg}"], -1))
+
+        #delete the temp register
+        del_register(arg_reg)
 
 
     def __str__(self):
@@ -222,12 +277,18 @@ class ExpressionVar(Expression):
     def TMM(self, target_reg):
         #start by getting the register number of our var
         if not self.name in variable_lookup.keys() :
-            add_error(f"Variable name {self.name} used without being declared.")
+            raise LookupError(f"Variable name {self.name} used without being declared.")
         
         var_reg = variable_lookup[self.name]
 
         #then copy that register value onto our target
         add_entry(new_entry("copy", [f"%{var_reg}"], target_reg))
+
+    def BMM(self):
+        if not self.name in variable_lookup.keys() :
+            raise LookupError(f"Variable name {self.name} used without being declared.")
+
+        return variable_lookup[self.name]
 
     def __str__(self):
         return self.name
@@ -241,8 +302,17 @@ class ExpressionInt(Expression):
         #easy peasy
         add_entry(new_entry("const", [self.value], target_reg))
 
+    def BMM(self):
+        #store int in fresh register
+        int_reg = new_free_register()
+        add_entry(new_entry("const", [self.value], int_reg))
+
+        return int_reg
+
     def __str__(self):
         return str(self.value)
+
+
 
 class ExpressionUniOp(Expression):
     def __init__(self, operator, argument):
@@ -254,13 +324,25 @@ class ExpressionUniOp(Expression):
         arg_reg = new_free_register()
         self.argument.TMM(arg_reg)
 
-        add_entry(new_entry(opcodes[self.operator], [f"{arg_reg}"], target_reg))
+        add_entry(new_entry(opcodes[self.operator], [f"%{arg_reg}"], target_reg))
 
         #delete temp reg
         del_register(arg_reg)
 
+    def BMM(self):
+        #evaluate argument 
+        arg_reg = self.argument.BMM()
+        result_reg = new_free_register()
+
+        add_entry(new_entry(opcodes[self.operator], [f"%{arg_reg}"], result_reg))
+
+        del_register(arg_reg)
+        return result_reg
+
+
     def __str__(self):
         return f"({self.operator} {str(self.argument)})"
+
 
 class ExpressionBinOp(Expression):
     def __init__(self, operator, left, right ):
@@ -281,6 +363,20 @@ class ExpressionBinOp(Expression):
         #delete temps regs
         del_register(left_reg)
         del_register(right_reg)
+
+
+    def BMM(self):
+        left_reg = self.left.BMM()
+        right_reg = self.right.BMM()
+
+        result_reg = new_free_register()
+        add_entry(new_entry(opcodes[self.operator], [f"%{left_reg}", f"%{right_reg}"], result_reg))
+
+
+        del_register(left_reg)
+        del_register(right_reg)
+
+        return result_reg
 
 
     def __str__(self):
