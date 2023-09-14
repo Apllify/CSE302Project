@@ -82,10 +82,11 @@ class Lexer:
         "while" : "WHILE",
         "int" : "INT",
         "var" : "VAR",
-        "def" : "DEF"
+        "def" : "DEF",
+        "main" : "MAIN"
     }
 
-    tokens = (                  # FIXME (add more tokens)
+    tokens = (                 
         'IDENT' ,
         'NUMBER',
 
@@ -117,11 +118,12 @@ class Lexer:
     ) + tuple(reserved.values())
 
     #characters to skip 
-    t_ignore = re.escape(" \t\f\v")
+    t_ignore = " \t\f\v"
 
-    #regex expressions for all of the tokens that don't need a payload
+
+    # Regexp strings definitions beginning with ‘t_’ define simple tokens    
     t_PLUS = re.escape('+') 
-    t_MINUS = re.escape("-")
+    t_MINUS = "-"
     t_PRODUCT = re.escape("*")
     t_DIVISION = re.escape("/")
     t_MODULO = re.escape("%")
@@ -158,27 +160,27 @@ class Lexer:
     def t_IDENT(self, t):
         r'[a-zA-Z_][a-zA-Z0-9_]*'
 
-        if t in Lexer.reserved.keys():
-            t.type = Lexer.reserved[t]
+        t.type = Lexer.reserved.get(t.value, "IDENT")
 
         return t
+
+    def t_newline(self, t):
+        r'\n'
+        self.linenumber += 1
 
     def t_error(self, t):
         print(f"illegal character: `{t.value[0]}' in line : {self.linenumber}", file = sys.stderr)
         self.nerrors += 1
         t.lexer.skip(1) 
 
-    def t_newline(self, t):
-        r'\n'
-        self.linenumber += 1
+
     
 
 
     @classmethod
     def build(cls, **kw):
         instance = cls()
-        # instance.lexer = ply.lex.lex(instance, **kw)
-        instance.lexer = ply.lex.lex(module = instance, **kw)
+        instance.lexer = ply.lex.lex(object = instance, **kw)
         return instance
 
 
@@ -215,24 +217,125 @@ class Parser:
     precedence = ()             # FIXME: set the correct precedence
 
     def p_name(self, p):
-        """name : IDENT"""
-        p[0] = Name(value = p[1])
+        """expr : IDENT"""
+        p[0] = ast.Name(p[1])
 
     def p_expression_int(self, p):
         """expr : NUMBER"""
-        p[0] = IntExpression(value = p[1])
+        p[0] = ast.ExpressionInt(p[1])
 
     def p_expression_add(self, p):
         """expr : expr PLUS  expr"""
 
-        p[0] = OpAppExpression(
-            operator  = self.BINOP[p[2]],
-            arguments = [p[1], p[3]],
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP[p[2]],
+            left=p[1],
+            right = p[3]
         )
 
+    def p_expression_subtract(self,p):
+        """expr : expr MINUS expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )
+
+    def p_expression_multiply(self, p):
+        """expr : expr PRODUCT expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )
+
+    def p_expression_divide(self, p):
+        """expr : expr DIVISION expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )
+
+    def p_expression_modulo(self, p):
+        """expr : expr MODULO expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )        
+
+    def p_expression_and(self, p):
+        """expr : expr AND expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )        
+    def p_expression_or(self, p):
+        """expr : expr OR expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )        
+    def p_expression_xor(self, p):
+        """expr : expr XOR expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )        
+    def p_expression_lshift(self, p):
+        """expr : expr LSHIFT expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )        
+    def p_expression_rshift(self, p):
+        """expr : expr RSHIFT expr"""
+
+        p[0] = ast.ExpressionBinOp(
+            operator = self.BINOP(p[2]),
+            left = p[1],
+            right = p[3]
+        )      
+
+    def p_expression_negation(self, p):
+        """expr : MINUS expr"""
+        p[0] = ast.ExpressionUniOp(
+            operator = self.BINOP(p[1]),
+            argument=p[2]
+        )
+
+    def p_expression_inversion(self, p):
+        """expr : INVERSE expr"""
+        p[0] = ast.ExpressionUniOp(
+            operator = self.BINOP(p[1]),
+            argument=p[2]
+        )
+
+    def p_expression_parens(self, p):
+        """expr : LPAREN expr RPAREN"""
+        p[0] = p[2]
+
+
+
     def p_prgm(self, p):
-        """prgm : """           # FIXME: fix the parser
-        p[0] = None
+        """prgm : DEF MAIN LPAREN RPAREN LCURLYBRACKET procedure RCURLYBRACKET"""           
+        p[0] = ast.Root(p[6])
+
+    def p_procedure(self, p):
+        """"""
 
     def p_error(self, p):
         self.lexer.nerrors += 1
@@ -314,66 +417,66 @@ class TAC:
 # ====================================================================
 # Maximal munch
 
-class MM:
-    def __init__(self):
-        self._counter = -1
-        self._tac     = []
-        self._vars    = {}
+# class MM:
+#     def __init__(self):
+#         self._counter = -1
+#         self._tac     = []
+#         self._vars    = {}
 
-    tac = property(lambda self : self._tac)
+#     tac = property(lambda self : self._tac)
 
-    @staticmethod
-    def mm(prgm : Program):
-        mm = MM(); mm.for_program(prgm)
-        return mm._tac
+#     @staticmethod
+#     def mm(prgm : Program):
+#         mm = MM(); mm.for_program(prgm)
+#         return mm._tac
 
-    def fresh_temporary(self):
-        self._counter += 1
-        return f'%{self._counter}'
+#     def fresh_temporary(self):
+#         self._counter += 1
+#         return f'%{self._counter}'
 
-    def push(
-            self,
-            opcode     : str,
-            *arguments : str,
-            result     : tp.Optional[str] = None,
-    ):
-        self._tac.append(TAC(opcode, list(arguments), result))
+#     def push(
+#             self,
+#             opcode     : str,
+#             *arguments : str,
+#             result     : tp.Optional[str] = None,
+#     ):
+#         self._tac.append(TAC(opcode, list(arguments), result))
 
-    def for_program(self, prgm : Program):
-        for stmt in prgm:
-            self.for_statement(stmt)
+#     def for_program(self, prgm : Program):
+#         for stmt in prgm:
+#             self.for_statement(stmt)
 
-    def for_statement(self, stmt : Statement):
-        match stmt:
-            case VarDeclStatement(name):
-                self._vars[name.value] = self.fresh_temporary()
-                self.push('const', '0', self._vars[name.value])
+#     def for_statement(self, stmt : Statement):
+#         match stmt:
+#             case VarDeclStatement(name):
+#                 self._vars[name.value] = self.fresh_temporary()
+#                 self.push('const', '0', self._vars[name.value])
 
-            case AssignStatement(lhs, rhs):
-                temp = self.for_expression(rhs)
-                self.push('copy', temp, result = self._vars[lhs.value])
+#             case AssignStatement(lhs, rhs):
+#                 temp = self.for_expression(rhs)
+#                 self.push('copy', temp, result = self._vars[lhs.value])
 
-            case PrintStatement(value):
-                temp = self.for_expression(value)
-                self.push('print', temp)
+#             case PrintStatement(value):
+#                 temp = self.for_expression(value)
+#                 self.push('print', temp)
 
-    def for_expression(self, expr : Expression) -> str:
-        target = None
+#     def for_expression(self, expr : Expression) -> str:
+#         target = None
 
-        match expr:
-            case VarExpression(name):
-                target = self._vars[name.value]
+#         match expr:
+#             case VarExpression(name):
+#                 target = self._vars[name.value]
 
-            case IntExpression(value):
-                target = self.fresh_temporary()
-                self.push('const', str(value), result = target)
+#             case IntExpression(value):
+#                 target = self.fresh_temporary()
+#                 self.push('const', str(value), result = target)
 
-            case OpAppExpression(operator, arguments):
-                target    = self.fresh_temporary()
-                arguments = [self.for_expression(e) for e in arguments]
-                self.push(OPCODES[operator], *arguments, result = target)
+#             case OpAppExpression(operator, arguments):
+#                 target    = self.fresh_temporary()
+#                 arguments = [self.for_expression(e) for e in arguments]
+#                 self.push(OPCODES[operator], *arguments, result = target)
 
-        return target
+#         return target
 
 # ====================================================================
 # Parse command line arguments
@@ -405,8 +508,6 @@ def _main():
 
     if prgm is None:
         exit(1)
-
-    print(prgm)
 
     if not SynChecker.check(prgm):
         exit(1)

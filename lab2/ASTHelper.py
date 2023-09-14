@@ -149,6 +149,9 @@ class Procedure:
         return output
 
         
+class Name : 
+    def __init__(self, name):
+        self.name = name
 
 class Statement : 
     pass
