@@ -17,65 +17,12 @@ import sys
 import typing as tp
 
 import ASTHelper as ast
-# ====================================================================
-# Parse tree / Abstract Syntax Tree
 
-# --------------------------------------------------------------------
-@dc.dataclass
-class Name:
-    value: str
 
-# --------------------------------------------------------------------
-class Expression:
-    pass
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class VarExpression(Expression):
-    name: Name
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class IntExpression(Expression):
-    value: int
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class OpAppExpression(Expression):
-    operator: str
-    arguments: list[Expression]
-
-# --------------------------------------------------------------------
-class Statement:
-    pass
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class VarDeclStatement(Statement):
-    name: Name
-    init: Expression
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class AssignStatement(Statement):
-    lhs: Name
-    rhs: Expression
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class PrintStatement(Statement):
-    value: Expression
-
-# --------------------------------------------------------------------
-Program = list[Statement]
-
-# ====================================================================
-# BX lexer definition
+#TODO : add line support for ast classes 
 
 class Lexer:
-    # FIXME: complete the lexer
-    # DONE: - add all tokens
-    # DONE: - add all lexing entries (t_XXX)
+
 
     reserved = {
         "print" : "PRINT",
@@ -342,52 +289,138 @@ class Parser:
 
 # ====================================================================
 # Syntax-level checker
-
 class SynChecker:
-    def __init__(self):
-        pass
 
-    def for_program(self, prgm : Program):
-        # FIXME: check that `prgm` is syntactical correct
-        pass
+    error_types = (
+        "ERROR",
+        "WARNING",
+        "INFO"
+    )
+
+    base_functions = (
+        "print",
+    ) 
+
+    max_num_bit_length = 63
+
+    def __init__(self):
+        self.declared_variables = []
+        self.declared_functions = [] + list(SynChecker.base_functions)
+
+        self.error_log = []
+        self.n_errors = 0
+
+        self.stmt_number = 1
+
+    def error_mes(self, type, content, stmt_i = -1):
+
+        sane_type = type.upper()
+        if sane_type not in SynChecker.error_types : 
+            sane_type = "ERROR"
+
+        if stmt_i == -1:
+            self.error_log.append(f"{sane_type} : {content.capitalize()}.")
+        else:
+            self.error_log.append(f"Statement n°{stmt_i} : {sane_type} : {content.capitalize()}")
+        self.n_errors += 1
+
+    
+
+    def sort_error_log(self):
+        #the order should go "Errors -> Warnings -> Infos"
+        sort_key = lambda x : len(SynChecker.error_types) - SynChecker.error_types.index(x.split(" ")[3]) 
+        self.error_log.sort(key=sort_key)
+
+
+    def for_program(self, root:ast.Root):
+        # START by checking that the procedure (function) of our program
+        # is called main and has no arguments
+        if root.procedure.name != "main":
+            self.error_mes("ERROR", "main function not named 'main'")
+
+        if root.procedure.arguments != []:
+            self.error_mes("ERROR", "main function shouldn't take any arguments")
+
+        #now perform syntax checking line by line
+        for statement in root.procedure.body : 
+            self.for_statement(statement)
+            self.stmt_number += 1
+
+        #TODO : delete me once debugging is over
+        self.sort_error_log()
+        print(self.error_log)
+        
+        
+    def for_statement(self, stmt:ast.Statement):
+
+        match stmt : 
+            case ast.StatementVarDecl(name = name, init = expression) : 
+
+                #check that this is our first time declaring this 
+                if name in self.declared_variables : 
+                    self.error_mes("WARNING", f"variable {name} declared more than once", self .stmt_number)
+
+                #check that the expression is valid without having declared the var
+                self.for_expression(expression)
+
+                #declare the var
+                if  name not in self.declared_variables : 
+                    self.declared_variables.append(name)
+
+            case ast.StatementAssign(lvalue = lvalue, rvalue= rvalue):
+                #check that the variable we're assigning to exists
+                if  lvalue not in self.declared_variables : 
+                    self.error_mes("ERROR", f"variable {lvalue} used before declaration", self.stmt_number) 
+
+                #check on the expression
+                self.for_expression(rvalue)
+
+            case ast.StatementEval(expression = expression):
+                self.for_expression(expression)
+
+            case _:
+                self.error_mes("ERROR", "unrecognized statement type", self.stmt_number)
+
+
+
+    def for_expression(self, expr:ast.Expression):
+        match expr : 
+            case ast.ExpressionCall(target=target,argument=argument):
+                #check that the called function is valid
+                if target not in self.declared_functions :
+                    self.error_mes("ERROR", f"function {target} undefined", self.stmt_number)
+
+                #TODO : allow for argument lists
+                if type(argument) == type([]): 
+                    raise Exception("lists of arguments not supported yet :(")
+                
+                self.for_expression(argument)
+
+            case ast.ExpressionVar(name=name):
+
+                if name not in self.declared_variables :
+                    self.error_mes("ERROR", f"function {name} used without being declared", self.stmt_number)
+
+            case ast.ExpressionInt(value=value):
+
+                if value.bit_length() > SynChecker.max_num_bit_length:
+                    self.error_mes("ERROR", f"value {value} exceeds the {SynChecker.max_num_bit_length} bit limit", self.stmt_number)
+
+                      
+
+            # case _: 
+            #     self.erorr_mes("ERROR", "unsupported expression type", self.stmt_number)
+
+
+
+
 
     @classmethod
-    def check(cls, prgm : Program):
+    def check(cls, prgm : ast.Root):
         checker = cls()
         checker.for_program(prgm)
-        return (checker.nerrors == 0)
+        return (checker.n_errors == 0)
 
-# ====================================================================
-# Three-Address Code
-
-OPCODES = {
-    'opposite'            : 'neg',
-    'addition'            : 'add',
-    'subtraction'         : 'sub',
-    'multiplication'      : 'mul',
-    'division'            : 'div',
-    'modulus'             : 'mod',
-    'bitwise-negation'    : 'not',
-    'bitwise-and'         : 'and',
-    'bitwise-or'          :  'or',
-    'bitwise-xor'         : 'xor',
-    'logical-shift-left'  : 'shl',
-    'logical-shift-right' : 'shr',
-}
-
-# --------------------------------------------------------------------
-@dc.dataclass
-class TAC:
-    opcode    : str
-    arguments : list[str]
-    result    : tp.Optional[str] = None
-
-    def tojson(self):
-        return dict(
-            opcode = self.opcode   ,
-            args   = self.arguments,
-            result = self.result   ,
-        )
 
 
 
@@ -421,10 +454,9 @@ def _main():
     if prgm is None:
         exit(1)
 
-    print(prgm)
 
-    # if not SynChecker.check(prgm):
-    #     exit(1)
+    if not SynChecker.check(prgm):
+        exit(1)
 
     # tac = MM.mm(prgm)
 
