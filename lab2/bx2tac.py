@@ -19,14 +19,13 @@ import typing as tp
 import ASTHelper as ast
 
 
-#TODO : add line support for ast classes 
+#TODO : add line number support for ast classes 
 
 class Lexer:
 
 
     reserved = {
         "print" : "PRINT",
-        "while" : "WHILE",
         "int" : "INT",
         "var" : "VAR",
         "def" : "DEF",
@@ -399,14 +398,19 @@ class SynChecker:
             case ast.ExpressionVar(name=name):
 
                 if name not in self.declared_variables :
-                    self.error_mes("ERROR", f"function {name} used without being declared", self.stmt_number)
+                    self.error_mes("ERROR", f"variable {name} used before declaration", self.stmt_number)
 
             case ast.ExpressionInt(value=value):
 
                 if value.bit_length() > SynChecker.max_num_bit_length:
                     self.error_mes("ERROR", f"value {value} exceeds the {SynChecker.max_num_bit_length} bit limit", self.stmt_number)
 
-                      
+            case ast.ExpressionUniOp(argument = arg):
+                self.for_expression(arg)
+
+            case ast.ExpressionBinOp(left =left, right = right):
+                self.for_expression(left)
+                self.for_expression(right)     
 
             # case _: 
             #     self.erorr_mes("ERROR", "unsupported expression type", self.stmt_number)
