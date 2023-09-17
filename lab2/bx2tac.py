@@ -462,21 +462,17 @@ def _main():
     if not SynChecker.check(prgm):
         exit(1)
 
-    # tac = MM.mm(prgm)
+    #TODO : add option to choose between tmm and bmm (both already implemented)
+    tac = prgm.TMM()
 
-    # aout = [dict(
-    #     proc = '@main',
-    #     body = [x.tojson() for x in tac],
-    # )]
+    try:
+        with open(args.output, 'w') as stream:
+            json.dump(tac, stream, indent = 2)
+            print(file = stream) # Add a new-line
 
-    # try:
-    #     with open(args.output, 'w') as stream:
-    #         json.dump(aout, stream, indent = 2)
-    #         print(file = stream) # Add a new-line
-
-    # except IOError as e:
-    #     print(f'cannot write outpout file {args.output}: {e}')
-    #     exit(1)
+    except IOError as e:
+        print(f'cannot write output file {args.output}: {e}')
+        exit(1)
 
 # --------------------------------------------------------------------
 if __name__ == '__main__':

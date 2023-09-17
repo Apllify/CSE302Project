@@ -16,8 +16,8 @@ opcodes = {
         "bitwise-xor": "xor",
         "bitwise-or" : "or",
         "bitwise-and": "and",
-        "logical-shift-left":"shl",
-        "logical-shift-right":"shr"
+        "logical-left-shift":"shl",
+        "logical-right-shift":"shr"
 }
 
 
