@@ -101,7 +101,7 @@ class Lexer:
         "XOR",
         "LSHIFT",
         "RSHIFT",
-        "INVERSE",
+        "COMPLEMENT",
 
         "EQUAL",
 
@@ -133,7 +133,7 @@ class Lexer:
     t_XOR = re.escape("^")
     t_LSHIFT = re.escape("<<")
     t_RSHIFT = re.escape(">>")
-    t_INVERSE = re.escape("~")
+    t_COMPLEMENT = re.escape("~")
 
     t_EQUAL = re.escape("=")
 
@@ -214,18 +214,37 @@ class Parser:
     
     start = 'prgm'
 
-    precedence = ()             # FIXME: set the correct precedence
+    precedence = (
+        ("left", "OR"),
+        ("left", "XOR"),
+        ("left", "AND"),
+        ("left", "LSHIFT", "RSHIFT"),
+        ("left",   "PLUS", "MINUS"),
+        ("left", "PRODUCT", "DIVISION", "MODULO"),
+        ("right", "UMINUS"),
+        ("right", "COMPLEMENT")
+    )             # FIXME: set the correct precedence
 
     def p_name(self, p):
         """expr : IDENT"""
-        p[0] = ast.Name(p[1])
+        p[0] = ast.ExpressionVar(p[1])
 
     def p_expression_int(self, p):
         """expr : NUMBER"""
         p[0] = ast.ExpressionInt(p[1])
 
-    def p_expression_add(self, p):
-        """expr : expr PLUS  expr"""
+    def p_expression_binop(self, p):
+        """expr :  expr PLUS expr
+                 | expr MINUS expr
+                 | expr PRODUCT expr
+                 | expr DIVISION expr
+                 | expr MODULO expr
+                 | expr AND expr
+                 | expr OR expr
+                 | expr XOR expr
+                 | expr LSHIFT expr
+                 | expr RSHIFT expr
+                 """
 
         p[0] = ast.ExpressionBinOp(
             operator = self.BINOP[p[2]],
@@ -233,94 +252,18 @@ class Parser:
             right = p[3]
         )
 
-    def p_expression_subtract(self,p):
-        """expr : expr MINUS expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )
-
-    def p_expression_multiply(self, p):
-        """expr : expr PRODUCT expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )
-
-    def p_expression_divide(self, p):
-        """expr : expr DIVISION expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )
-
-    def p_expression_modulo(self, p):
-        """expr : expr MODULO expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )        
-
-    def p_expression_and(self, p):
-        """expr : expr AND expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )        
-    def p_expression_or(self, p):
-        """expr : expr OR expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )        
-    def p_expression_xor(self, p):
-        """expr : expr XOR expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )        
-    def p_expression_lshift(self, p):
-        """expr : expr LSHIFT expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )        
-    def p_expression_rshift(self, p):
-        """expr : expr RSHIFT expr"""
-
-        p[0] = ast.ExpressionBinOp(
-            operator = self.BINOP(p[2]),
-            left = p[1],
-            right = p[3]
-        )      
 
     def p_expression_negation(self, p):
-        """expr : MINUS expr"""
+        """expr : MINUS expr %prec UMINUS"""
         p[0] = ast.ExpressionUniOp(
-            operator = self.BINOP(p[1]),
+            operator = self.BINOP[p[1]],
             argument=p[2]
         )
 
     def p_expression_inversion(self, p):
-        """expr : INVERSE expr"""
+        """expr : COMPLEMENT expr"""
         p[0] = ast.ExpressionUniOp(
-            operator = self.BINOP(p[1]),
+            operator = self.BINOP[p[1]],
             argument=p[2]
         )
 
@@ -331,11 +274,43 @@ class Parser:
 
 
     def p_prgm(self, p):
-        """prgm : DEF MAIN LPAREN RPAREN LCURLYBRACKET procedure RCURLYBRACKET"""           
-        p[0] = ast.Root(p[6])
+        """prgm : DEF MAIN LPAREN RPAREN LCURLYBRACKET statement_star RCURLYBRACKET"""           
+        p[0] = ast.Root(ast.Procedure("main", [], "int", p[6]))
 
-    def p_procedure(self, p):
-        """"""
+
+    def p_statement_star(self, p):
+        """statement_star :
+                          | statement_star statement"""
+        
+        if len(p) == 1:
+            p[0] = []
+        else:
+            p[0] = p[1]
+            p[0].append(p[2])
+
+    def p_statement(self, p):
+        """statement : vardecl
+                     | assign 
+                     | print """
+
+        p[0] = p[1]
+
+    def p_vardecl(self, p):
+        """vardecl : VAR IDENT EQUAL expr COLON INT SEMICOLON"""
+    
+        p[0] = ast.StatementVarDecl(p[2], p[6], p[4])
+
+    def p_assign(self, p):
+        """assign : IDENT EQUAL expr SEMICOLON"""
+
+        p[0] = ast.StatementAssign(p[1], p[3])
+
+    def p_print(self, p):
+        """print : PRINT LPAREN expr RPAREN SEMICOLON"""
+
+        p[0] = ast.StatementEval(ast.ExpressionCall("print", p[3]))
+
+
 
     def p_error(self, p):
         self.lexer.nerrors += 1
@@ -414,72 +389,7 @@ class TAC:
             result = self.result   ,
         )
 
-# ====================================================================
-# Maximal munch
 
-# class MM:
-#     def __init__(self):
-#         self._counter = -1
-#         self._tac     = []
-#         self._vars    = {}
-
-#     tac = property(lambda self : self._tac)
-
-#     @staticmethod
-#     def mm(prgm : Program):
-#         mm = MM(); mm.for_program(prgm)
-#         return mm._tac
-
-#     def fresh_temporary(self):
-#         self._counter += 1
-#         return f'%{self._counter}'
-
-#     def push(
-#             self,
-#             opcode     : str,
-#             *arguments : str,
-#             result     : tp.Optional[str] = None,
-#     ):
-#         self._tac.append(TAC(opcode, list(arguments), result))
-
-#     def for_program(self, prgm : Program):
-#         for stmt in prgm:
-#             self.for_statement(stmt)
-
-#     def for_statement(self, stmt : Statement):
-#         match stmt:
-#             case VarDeclStatement(name):
-#                 self._vars[name.value] = self.fresh_temporary()
-#                 self.push('const', '0', self._vars[name.value])
-
-#             case AssignStatement(lhs, rhs):
-#                 temp = self.for_expression(rhs)
-#                 self.push('copy', temp, result = self._vars[lhs.value])
-
-#             case PrintStatement(value):
-#                 temp = self.for_expression(value)
-#                 self.push('print', temp)
-
-#     def for_expression(self, expr : Expression) -> str:
-#         target = None
-
-#         match expr:
-#             case VarExpression(name):
-#                 target = self._vars[name.value]
-
-#             case IntExpression(value):
-#                 target = self.fresh_temporary()
-#                 self.push('const', str(value), result = target)
-
-#             case OpAppExpression(operator, arguments):
-#                 target    = self.fresh_temporary()
-#                 arguments = [self.for_expression(e) for e in arguments]
-#                 self.push(OPCODES[operator], *arguments, result = target)
-
-#         return target
-
-# ====================================================================
-# Parse command line arguments
 
 def parse_args():
     parser = argparse.ArgumentParser(prog = os.path.basename(sys.argv[0]))
@@ -501,32 +411,36 @@ def _main():
 
     except IOError as e:
         print(f'cannot read input file {args.input}: {e}')
-        exit(1)    
+        exit(1)   
 
 
+
+    ##DEFAULT STUFF from skeleton file, uncomment when parser is ready
     prgm = Parser.parse(prgm)
 
     if prgm is None:
         exit(1)
 
-    if not SynChecker.check(prgm):
-        exit(1)
+    print(prgm)
 
-    tac = MM.mm(prgm)
+    # if not SynChecker.check(prgm):
+    #     exit(1)
 
-    aout = [dict(
-        proc = '@main',
-        body = [x.tojson() for x in tac],
-    )]
+    # tac = MM.mm(prgm)
 
-    try:
-        with open(args.output, 'w') as stream:
-            json.dump(aout, stream, indent = 2)
-            print(file = stream) # Add a new-line
+    # aout = [dict(
+    #     proc = '@main',
+    #     body = [x.tojson() for x in tac],
+    # )]
 
-    except IOError as e:
-        print(f'cannot write outpout file {args.output}: {e}')
-        exit(1)
+    # try:
+    #     with open(args.output, 'w') as stream:
+    #         json.dump(aout, stream, indent = 2)
+    #         print(file = stream) # Add a new-line
+
+    # except IOError as e:
+    #     print(f'cannot write outpout file {args.output}: {e}')
+    #     exit(1)
 
 # --------------------------------------------------------------------
 if __name__ == '__main__':
