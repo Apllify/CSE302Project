@@ -3,7 +3,7 @@ import json
 
 
 #TODO :
-# - currently this prgrm assumes that there is ONLY one method and that it is called main
+# - currently this prgrm assumes that there is ONLY one method/procedure and that it is called main
 # - this program also assumes that the input is syntactically correct (no references before declare, etc...)
 
 def gen_asm(tac_json, output_path):
@@ -43,7 +43,23 @@ def gen_asm(tac_json, output_path):
         if (tempname == None):
             return None
 
-        return f"-{8*temps_lookup[tempname]}(%rbp)"
+        return f"{8*temps_lookup[tempname]}(%rbp)"
+
+
+    #gives a readable string from a TAC op
+    def op_to_string(op):
+        opcode = command['opcode']
+        args = map(str, command['args'])
+        result = command['result']
+
+        #case 1 : op with no return value
+        if result == None:
+            return_string = f"{opcode} {' '.join(args)}"
+        #case 2 : op that stores result somewhere
+        else:
+            return_string = f"{result} = {opcode} {' '.join(args)}"
+
+        return return_string
 
 
 
@@ -86,6 +102,11 @@ def gen_asm(tac_json, output_path):
         "not" : "notq"
     }
 
+    cond_jumps = [
+        "jz", "jl", "jle",
+        "jnz", "jnl", "jnle"
+    ]
+
 
     for command in command_list:
         #####---------------------------------------
@@ -94,9 +115,14 @@ def gen_asm(tac_json, output_path):
         opcode = command['opcode']
         args = command['args']
 
-        result = command_list['result']
+        result = command['result']
         result_address = get_temp_address(result)
 
+        #start by adding the source command as a comment
+        asm_lines.append(f"\t/* {op_to_string(command)} */")
+
+
+        #now add the actual code line 
         if opcode == "nop":
 
             pass
@@ -142,14 +168,45 @@ def gen_asm(tac_json, output_path):
             add_asm(asm_op, r"%r11")
             add_asm("movq", r"%r11", result_address)
 
+        elif opcode == "jmp":
+            destination = args[0]
+            add_asm(opcode, destination)
+
+        elif opcode in cond_jumps : 
+            condition = get_temp_address(args[0])
+            destination = args[1]
+
+            add_asm(opcode, condition, destination)
+
+        elif opcode == "label":
+            
+            label_name = args[0][1:]
+            
+            #determine whether local or global label
+            if label_name[0] == ".":
+                asm_lines.append(f".main{label_name}:")
+            else: 
+                asm_lines.append(f"{label_name}:")
+
+
 
         elif opcode == "print":
-            pass
+            
+            source = get_temp_address(args[0])
 
+            add_asm("movq", source, r"%rdi")
+            add_asm("callq", "bx_print_int")
+
+
+            
 
         else: 
+            print(opcode)
             raise NotImplementedError()
 
+
+        #empty line
+        asm_lines.append("")
 
 
         #####BIG BLOCK of code over
