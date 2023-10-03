@@ -97,6 +97,11 @@ def gen_asm(tac_json, output_path):
 
     special_binops = ("mul", "div", "mod", "shl", "shr")
 
+    shifts = {
+        "shl": "salq",
+        "shr": "sarq"
+    }
+
     uniops = {
         "neg": "negq",
         "not" : "notq"
@@ -157,7 +162,39 @@ def gen_asm(tac_json, output_path):
 
 
         elif opcode in special_binops :
-            pass
+
+            s1_address = get_temp_address(args[0])
+            s2_address = get_temp_address(args[1])
+
+            "div", "mod", "shl", "shr"
+            
+            #case by case analysis for the special binops
+            if opcode == "mul":
+                add_asm("movq", s1_address, r"%rax")
+                add_asm("imulq", s2_address)
+                add_asm("movq", r"%rax", result_address)
+
+            elif opcode == "div":
+                add_asm("movq", s1_address, r"%rax")
+                add_asm("cqto")
+                add_asm("idivq", s2_address)
+                add_asm("movq", r"%rax", result_address)
+
+
+
+            elif opcode == "mod":
+                add_asm("movq", s1_address, r"%rax")
+                add_asm("cqto")
+                add_asm("idivq", s2_address)
+                add_asm("movq", r"%rdx", result_address)
+
+
+            elif opcode in ("shl", "shr"):
+                add_asm("movq", s2_address, r"%rcx")
+                add_asm("movq", s1_address, r"%r11")
+                add_asm(shifts[opcode], r"%c1", r"%r11")
+                add_asm("movq", r"%r11", result_address)
+
 
         elif opcode in uniops : 
             

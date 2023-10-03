@@ -21,6 +21,7 @@ main:
 	movq $0, -32(%rbp)
 
 	/* label %.L4 */
+.main.L4:
 
 	/* %7 = copy %0 */
 	movq -8(%rbp), %r11
@@ -35,10 +36,13 @@ main:
 	movq %r11, -56(%rbp)
 
 	/* jnle %9 %.L5 */
+	jnle -56(%rbp), %.L5
 
 	/* jmp %.L6 */
+	jmp %.L6
 
 	/* label %.L5 */
+.main.L5:
 
 	/* %10 = copy %0 */
 	movq -8(%rbp), %r11
@@ -57,6 +61,8 @@ main:
 	movq %r11, -80(%rbp)
 
 	/* print %12 */
+	movq -80(%rbp), %rdi
+	callq bx_print_int
 
 	/* %13 = copy %1 */
 	movq -16(%rbp), %r11
@@ -80,8 +86,10 @@ main:
 	movq %r11, -24(%rbp)
 
 	/* jmp %.L4 */
+	jmp %.L4
 
 	/* label %.L6 */
+.main.L6:
 
 
 
