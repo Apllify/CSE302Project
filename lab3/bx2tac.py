@@ -28,20 +28,31 @@ class Lexer:
         "print" : "PRINT",
         "int" : "INT",
         "var" : "VAR",
+
         "def" : "DEF",
-        "main" : "MAIN"
+        "main" : "MAIN",
+
+        #control flow stuff
+        "if": "IF",
+        "else":"ELSE",
+        "while": "WHILE",
+        "break":"BREAK",
+        "continue" : "CONTINUE"
+
     }
 
     tokens = (                 
         'IDENT' ,
         'NUMBER',
 
+        #arithmetic operators
         'PLUS'  ,
         "MINUS",
         "PRODUCT",
         "DIVISION",
         "MODULO",
 
+        #bitwise operators
         "AND",
         "OR",
         "XOR",
@@ -51,11 +62,30 @@ class Lexer:
 
         "EQUAL",
 
+        #boolean terminals
+        "TRUE",
+        "FALSE",
 
+        #boolean operators
+        "ANDBOOL",
+        "ORBOOL",
+        "NOTBOOL",
+
+        #comparison operators
+        "LESSTHAN",
+        "LESSTHANEQUAL",
+        "GREATERTHAN",
+        "GREATERTHANEQUAL",
+
+        "ISEQUAL",
+        "NOTEQUAL",
+
+
+        #punctuation
         "COLON",
         "SEMICOLON",
 
-
+        #brackets
         "LPAREN",
         "RPAREN",
         "LCURLYBRACKET",
@@ -67,13 +97,16 @@ class Lexer:
     t_ignore = " \t\f\v"
 
 
-    # Regexp strings definitions beginning with ‘t_’ define simple tokens    
+    # simple definitions should start with t_
+
+    #arithmetic operators
     t_PLUS = re.escape('+') 
     t_MINUS = "-"
     t_PRODUCT = re.escape("*")
     t_DIVISION = re.escape("/")
     t_MODULO = re.escape("%")
 
+    #bitwise operators
     t_AND = re.escape("&")
     t_OR = re.escape("|")
     t_XOR = re.escape("^")
@@ -83,9 +116,30 @@ class Lexer:
 
     t_EQUAL = re.escape("=")
 
+    #boolean terminals
+    t_TRUE = re.escape("true")
+    t_FALSE = re.escape("false")
+
+    #boolean operators
+    t_ANDBOOL = re.escape("&&")
+    t_ORBOOL = re.escape("||")
+    t_NOTBOOL = re.escape("!")
+
+    #comparison operators
+    t_LESSTHAN = re.escape("<")
+    t_LESSTHANEQUAL = re.escape("<=")
+    t_GREATERTHAN = re.escape(">")
+    t_GREATERTHANEQUAL = re.escape(">=")
+
+    t_ISEQUAL = re.escape("==")
+    t_NOTEQUAL = re.escape("!=")
+
+    #punctuation
     t_COLON = re.escape(":")
     t_SEMICOLON = re.escape(";")
 
+
+    #brackets
     t_LPAREN = re.escape("(")
     t_RPAREN = re.escape(")")
     t_LCURLYBRACKET = re.escape("{")
@@ -141,19 +195,37 @@ class Parser:
     UNIOP = {
         '-' : 'opposite'        ,
         '~' : 'bitwise-negation',
+
+        "!" : "boolean-not",
+
     }
 
     BINOP = {
+        #arithmetic operators
         '+'  : 'addition'           ,
         '-'  : 'subtraction'        ,
         '*'  : 'multiplication'     ,
         '/'  : 'division'           ,
         '%'  : 'modulus'            ,
+
+        #bitwise operators
         '>>' : 'logical-right-shift',
         '<<' : 'logical-left-shift' ,
         '&'  : 'bitwise-and'        ,
         '|'  : 'bitwise-or'         ,
         '^'  : 'bitwise-xor'        ,
+
+        #boolean operators
+        "&&" : "boolean-and",
+        "||" : "boolean-or",
+
+        #comparison operators
+        "<" : "less-than",
+        "<=" : "less-than-equal",
+        ">" : "greater-than",
+        ">=" : "greater-than-equal"
+
+
     }
 
     tokens = Lexer.tokens
@@ -161,15 +233,30 @@ class Parser:
     start = 'prgm'
 
     precedence = (
+        #boolean operators
+        ("left", "ORBOOL"),
+        ("left", "ANDBOOL"),
+
+        #bitwise operators
         ("left", "OR"),
         ("left", "XOR"),
         ("left", "AND"),
+
+        #comparison operators
+        ("nonassoc", "ISEQUAL", "NOTEQUAL"),
+        ("nonassoc", "LESSTHAN", "LESSTHANEQUAL", "GREATERTHAN", "GREATERTHANEQUAL"),
+
+        #bitwise shifts
         ("left", "LSHIFT", "RSHIFT"),
+
+        #normal arithmetic operators
         ("left",   "PLUS", "MINUS"),
         ("left", "PRODUCT", "DIVISION", "MODULO"),
+
+        #most urgent (unary) operators
         ("right", "UMINUS"),
         ("right", "COMPLEMENT")
-    )             # FIXME: set the correct precedence
+    )             
 
     def p_name(self, p):
         """expr : IDENT"""
@@ -178,6 +265,14 @@ class Parser:
     def p_expression_int(self, p):
         """expr : NUMBER"""
         p[0] = ast.ExpressionInt(p[1])
+
+    def p_expression_bool(self, p):
+        """expr : TRUE
+                | FALSE"""
+        boolean = (True if p[1] == "true" else False)
+        p[0] = ast.ExpressionBool(boolean)
+
+
 
     def p_expression_binop(self, p):
         """expr :  expr PLUS expr
@@ -190,6 +285,14 @@ class Parser:
                  | expr XOR expr
                  | expr LSHIFT expr
                  | expr RSHIFT expr
+                 | expr ANDBOOL expr
+                 | expr ORBOOL expr
+                 | expr LESSTHAN expr
+                 | expr LESSTHANEQUAL expr
+                 | expr GREATERTHAN expr
+                 | expr GREATERTHANEQUAL expr
+                 | expr ISEQUAL expr
+                 | expr NOTEQUAL expr
                  """
 
         p[0] = ast.ExpressionBinOp(
@@ -202,16 +305,18 @@ class Parser:
     def p_expression_negation(self, p):
         """expr : MINUS expr %prec UMINUS"""
         p[0] = ast.ExpressionUniOp(
-            operator = self.BINOP[p[1]],
+            operator = self.UNIOP[p[1]],
             argument=p[2]
         )
 
-    def p_expression_inversion(self, p):
-        """expr : COMPLEMENT expr"""
+    def p_expression_uniop(self, p):
+        """expr : COMPLEMENT expr
+                | NOTBOOL expr   """
         p[0] = ast.ExpressionUniOp(
-            operator = self.BINOP[p[1]],
+            operator = self.UNIOP[p[1]],
             argument=p[2]
         )
+
 
     def p_expression_parens(self, p):
         """expr : LPAREN expr RPAREN"""
@@ -237,7 +342,9 @@ class Parser:
     def p_statement(self, p):
         """statement : vardecl
                      | assign 
-                     | print """
+                     | print 
+                     | ifelse
+                     | while"""
 
         p[0] = p[1]
 
@@ -251,11 +358,34 @@ class Parser:
 
         p[0] = ast.StatementAssign(p[1], p[3])
 
+    def p_ifelse(self, p):
+        """ifelse : IF LPAREN expr RPAREN LCURLYBRACKET statement_star RCURLYBRACKET ifrest"""
+        
+        p[0] = ast.StatementIfElse(p[3], p[6], p[8])
+
     def p_print(self, p):
         """print : PRINT LPAREN expr RPAREN SEMICOLON"""
 
         p[0] = ast.StatementEval(ast.ExpressionCall("print", p[3]))
 
+
+
+
+    def p_ifrest(self, p):
+        """ifrest : 
+                  | ELSE ifelse 
+                  | ELSE LCURLYBRACKET statement_star RCURLYBRACKET"""
+        
+        if len(p) == 1:
+            p[0] = ast.StatementIfRest()
+        elif len(p) == 3:
+            p[0] = ast.StatementIfRest(ifelse = p[2])
+        elif len(p) == 5:
+            p[0] = ast.StatementIfRest(block = p[3])
+
+    def p_while(self, p):
+        """while : WHILE LPAREN expr RPAREN LCURLYBRACKET statement_star RCURLYBRACKET"""
+        p[0] = ast.StatementWhile(p[3], p[6])
 
 
     def p_error(self, p):
@@ -458,21 +588,23 @@ def _main():
     if prgm is None:
         exit(1)
 
+    print("woo everything worked ?")
 
-    if not SynChecker.check(prgm):
-        exit(1)
 
-    #TODO : add option to choose between tmm and bmm (both already implemented)
-    tac = prgm.TMM()
+    # if not SynChecker.check(prgm):
+    #     exit(1)
 
-    try:
-        with open(args.output, 'w') as stream:
-            json.dump(tac, stream, indent = 2)
-            print(file = stream) # Add a new-line
+    # #TODO : add option to choose between tmm and bmm (both already implemented)
+    # tac = prgm.TMM()
 
-    except IOError as e:
-        print(f'cannot write output file {args.output}: {e}')
-        exit(1)
+    # try:
+    #     with open(args.output, 'w') as stream:
+    #         json.dump(tac, stream, indent = 2)
+    #         print(file = stream) # Add a new-line
+
+    # except IOError as e:
+    #     print(f'cannot write output file {args.output}: {e}')
+    #     exit(1)
 
 # --------------------------------------------------------------------
 if __name__ == '__main__':

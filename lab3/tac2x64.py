@@ -46,6 +46,11 @@ def gen_asm(tac_json, output_path):
         return f"{8*temps_lookup[tempname]}(%rbp)"
 
 
+    def get_local_label_name(label, procedure_name):
+        ###ASSUMES local labels are all of the form "%.L[0-9]"
+        return f".{procedure_name}{label[1:]}"
+
+
     #gives a readable string from a TAC op
     def op_to_string(op):
         opcode = command['opcode']
@@ -206,24 +211,39 @@ def gen_asm(tac_json, output_path):
             add_asm("movq", r"%r11", result_address)
 
         elif opcode == "jmp":
-            destination = args[0]
-            add_asm(opcode, destination)
+            dest_label = args[0]
+            procedure = "main"
+
+            if dest_label[0] == "%":
+                add_asm(opcode, get_local_label_name(dest_label, procedure))
+            else:
+                add_asm(opcode, dest_label)
 
         elif opcode in cond_jumps : 
-            condition = get_temp_address(args[0])
-            destination = args[1]
+            condition_address = get_temp_address(args[0])
+            dest_label = args[1]
+            procedure = "main"
 
-            add_asm(opcode, condition, destination)
+            #move the temp value into register then call compq to set the right flags
+            add_asm("movq", condition_address, r"%r11")
+            add_asm("cmpq", "$0", r"%r11")
+
+            #perform the jump depending on whether the jump is local or not
+            if (dest_label[0] == "%"):
+                add_asm(opcode, get_local_label_name(dest_label, procedure))
+            else:
+                add_asm(opcode, dest_label)
+
 
         elif opcode == "label":
-            
-            label_name = args[0][1:]
-            
+            procedure = "main"
+            local_label_name = get_local_label_name(args[0], procedure)
+
             #determine whether local or global label
-            if label_name[0] == ".":
-                asm_lines.append(f".main{label_name}:")
+            if args[0][0] == "%":
+                asm_lines.append(local_label_name + ":")
             else: 
-                asm_lines.append(f"{label_name}:")
+                asm_lines.append(f"{args[0]}:")
 
 
 

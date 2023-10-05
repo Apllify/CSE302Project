@@ -6,18 +6,33 @@ output_json = []
 
 
 opcodes = {
-        "opposite": "neg",
-        "bitwise-negation":"not",
+        #arithmetic operators
         "addition": "add",
         "subtraction" : "sub",
         "multiplication": "mul",
         "division": "div",
         "modulus" : "mod",
+        "opposite": "neg",
+
+
+        #bitwise operators
         "bitwise-xor": "xor",
         "bitwise-or" : "or",
         "bitwise-and": "and",
         "logical-left-shift":"shl",
-        "logical-right-shift":"shr"
+        "logical-right-shift":"shr",
+        "bitwise-negation":"not",
+
+        #boolean operators
+        "boolean-and":"",
+        "boolean-or" : "",
+
+        #comparison operators
+        "less-than":"",
+        "less-than-equal":"",
+        "greater-than":"",
+        "greater-than-equal" : "",
+
 }
 
 
@@ -237,11 +252,41 @@ class StatementEval(Statement):
     def __str__(self):
         return str(self.expression)
 
+class StatementIfElse(Statement):
+    def __init__(self, condition, block, ifrest):
+        self.condition = condition
+        self.block = block
+        self.ifrest = ifrest
 
+class StatementIfRest(Statement):
+    def __init__(self, ifelse=None, block=None):
+        # only ONE of these two attributes can have a 
+        # non-null value for a given instance
+        self.ifelse =  ifelse
+        self.block = block
+
+class StatementWhile(Statement):
+    def __init__(self, condition, block):
+        self.condition = condition
+        self.block = block
 
 
 class Expression:
-    pass
+    #can take values : "int" / "bool"
+    type = None
+
+    #returns the type of the expression while minimizing computation
+    def get_type(self):
+        if self.type != None:
+            return self.type
+        else:
+            self.compute_type()
+            return self.type
+
+    #should be overridden by every single expression child
+    def compute_type(self):
+        raise NotImplementedError()
+
 
 class ExpressionCall(Expression):
     def __init__(self, target, argument):
@@ -299,8 +344,9 @@ class ExpressionVar(Expression):
 
 
 class ExpressionInt(Expression):
-    def __init__(self, value):
+    def __init__(self, value:int):
         self.value = value
+        self.type = "int"
     
     def TMM(self, target_reg):
         #easy peasy
@@ -316,7 +362,9 @@ class ExpressionInt(Expression):
     def __str__(self):
         return str(self.value)
 
-
+class ExpressionBool(Expression):
+    def __init__(self, value : bool):
+        self.value = value
 
 class ExpressionUniOp(Expression):
     def __init__(self, operator, argument):
@@ -397,6 +445,8 @@ def json_to_type(js_obj):
     return js_obj[0]
 
 
+
+
 def json_to_AST(json_obj, is_root = False):
     
 
@@ -406,8 +456,6 @@ def json_to_AST(json_obj, is_root = False):
 
     #otherwise cycle through the names
     obj_type = json_obj[0]
-
-
 
     if obj_type == "<decl:proc>":
 
@@ -471,3 +519,26 @@ def json_to_AST(json_obj, is_root = False):
         #if no option was identified, raise an error
         raise ValueError(f'Unrecognized <expression>: {json_obj[0]}')
 
+
+
+
+
+###WE DEFINE THE MAXIMAL MUNCH OBJECTS HERE
+class TMM():
+    def __init__(self, root : Root):
+        #creating all of the important variables
+        self.used_registers = [] 
+        self.variable_lookup = {}
+
+        self.output_json = []
+
+        #storing the root ast object
+        self.root = root
+
+    def TMM(self, node):
+        #process the current node and add the appropriate tac code lines
+        pass
+
+
+    def get_TAC_json(self):
+        return self.output_json
