@@ -18,7 +18,6 @@ import typing as tp
 
 import ASTHelper as ast
 
-
 #TODO : add line number support for ast classes 
 
 class Lexer:
@@ -26,7 +25,11 @@ class Lexer:
 
     reserved = {
         "print" : "PRINT",
+
         "int" : "INT",
+        "bool" : "BOOL",
+        "void" : "VOID",
+
         "var" : "VAR",
 
         "def" : "DEF",
@@ -349,7 +352,8 @@ class Parser:
         p[0] = p[1]
 
     def p_vardecl(self, p):
-        """vardecl : VAR IDENT EQUAL expr COLON INT SEMICOLON"""
+        """vardecl : VAR IDENT EQUAL expr COLON INT SEMICOLON
+                    |VAR IDENT EQUAL expr COLON BOOL SEMICOLON"""
     
         p[0] = ast.StatementVarDecl(p[2], p[6], p[4])
 

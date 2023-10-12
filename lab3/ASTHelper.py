@@ -102,10 +102,10 @@ class Root :
         self.procedure = procedure
 
     def clean_slate():
-        global registers
+        global used_registers
         global output_json
 
-        registers = {}
+        used_registers = {}
         output_json = [{}]
 
     def TMM(self):
