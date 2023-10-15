@@ -39,7 +39,7 @@ class Lexer:
         "if": "IF",
         "else":"ELSE",
         "while": "WHILE",
-        "break":"BREAK",
+        "break": "BREAK",
         "continue" : "CONTINUE"
 
     }
@@ -226,7 +226,10 @@ class Parser:
         "<" : "less-than",
         "<=" : "less-than-equal",
         ">" : "greater-than",
-        ">=" : "greater-than-equal"
+        ">=" : "greater-than-equal",
+
+        "==" : "is-equal",
+        "!=" : "not-equal"
 
 
     }
@@ -353,7 +356,7 @@ class Parser:
 
     def p_vardecl(self, p):
         """vardecl : VAR IDENT EQUAL expr COLON INT SEMICOLON
-                    |VAR IDENT EQUAL expr COLON BOOL SEMICOLON"""
+                   | VAR IDENT EQUAL expr COLON BOOL SEMICOLON"""
     
         p[0] = ast.StatementVarDecl(p[2], p[6], p[4])
 
@@ -592,23 +595,26 @@ def _main():
     if prgm is None:
         exit(1)
 
-    print("woo everything worked ?")
 
 
-    # if not SynChecker.check(prgm):
-    #     exit(1)
+    if not SynChecker.check(prgm):
+        exit(1)
 
-    # #TODO : add option to choose between tmm and bmm (both already implemented)
-    # tac = prgm.TMM()
+    #TODO : add option to choose between tmm and bmm (both already implemented)
+    muncher = ast.Muncher()
+    muncher.TMM(prgm)
+    
 
-    # try:
-    #     with open(args.output, 'w') as stream:
-    #         json.dump(tac, stream, indent = 2)
-    #         print(file = stream) # Add a new-line
+    tac= muncher.get_TAC_json()
 
-    # except IOError as e:
-    #     print(f'cannot write output file {args.output}: {e}')
-    #     exit(1)
+    try:
+        with open(args.output, 'w') as stream:
+            json.dump(tac, stream, indent = 2)
+            print(file = stream) # Add a new-line
+
+    except IOError as e:
+        print(f'cannot write output file {args.output}: {e}')
+        exit(1)
 
 # --------------------------------------------------------------------
 if __name__ == '__main__':
