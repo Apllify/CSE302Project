@@ -76,11 +76,12 @@ class StatementIfElse(Statement):
         self.ifrest = ifrest
 
 class StatementIfRest(Statement):
-    def __init__(self, ifelse=None, block=None):
-        # only ONE of these two attributes can have a 
-        # non-null value for a given instance
+    def __init__(self, ifelse : StatementIfElse =None, else_block=None):
+        # AT MOST, one of the two attributes will be non-null
+        # however, both values CAN be null in the case of the absence
+        # of an else clause
         self.ifelse =  ifelse
-        self.block = block
+        self.else_block = else_block
 
 class StatementWhile(Statement):
     def __init__(self, condition, block):
@@ -197,7 +198,7 @@ class Muncher():
         "multiplication" : (["int", "int"], "int"),
         "division" : (["int", "int"], "int"),
         "modulus" : (["int", "int"], "int"),
-        "opposite" : (["int", "int"], "int"),
+        "opposite" : (["int"], "int"),
 
         #bitwise operators 
         "bitwise-xor" : (["int", "int"], "int"),
@@ -205,7 +206,7 @@ class Muncher():
         "bitwise-and" : (["int", "int"], "int"),
         "logical-left-shift" : (["int", "int"], "int"),
         "logical-right-shift" : (["int", "int"], "int"),
-        "bitwise-negation" : (["int", "int"], "int"),
+        "bitwise-negation" : (["int"], "int"),
 
         #boolean operators
         "boolean-and" : (["bool", "bool"], "bool"),
@@ -359,11 +360,26 @@ class Muncher():
             case ExpressionVar(name= name):
                 node.type = self.find_variable(name)[1]
 
-            case ExpressionUniOp(operator = op, argument=_):
-                node.type = self.optypes[op][1]
+            case ExpressionUniOp(operator = op, argument=arg):
+                self.compute_type(arg)
 
-            case ExpressionBinOp(operator = op, left=_, right=_):
-                node.type = self.optypes[op][1]
+                #type check the operands
+                optype = self.optypes[op]
+                if arg.type != optype[0][0] : raise TypeError(f"Incorrect input type for operator {op} : {arg}")   
+
+                node.type = optype[1]
+
+
+            case ExpressionBinOp(operator = op, left=left, right=right):
+                self.compute_type(left)
+                self.compute_type(right)
+
+                optype = self.optypes[op]
+                if left.type != optype[0][0] : raise TypeError(f"Incorrect left input type for operator {op} : {left}")   
+                if right.type != optype[0][1] : raise TypeError(f"Incorrect right input type for operator {op} : {right}")   
+
+
+                node.type = optype[1]
 
 
 
@@ -393,17 +409,34 @@ class Muncher():
 
 
             case StatementVarDecl(name =name, type=type, init=init):
-                reg = self.new_free_register()
+
+                var_reg = self.new_free_register()
                 self.compute_type(init)
 
+                if type != init.type : 
+                    raise TypeError(f"Variable declaration with invalid type : {init}, (expected type {type})")
+
+                #our behavior depends on the type of the declared variable
                 if init.type == "int":
-                    self.TMM_int(init, reg)
+                    self.TMM_int(init, var_reg)
                 elif init.type == "bool":
-                    #TODO : make this section make sense
-                    self.TMM_bool(init, reg)
+                    temp_reg=  self.new_free_register()
+
+                    L_int = self.new_label() 
+                    L_fin = self.new_label()
+
+                    self.add_entry(self.new_entry("const", [1], temp_reg))
+
+                    self.TMM_bool(init, L_fin, L_int)
+
+                    self.add_label(L_int)
+                    self.add_entry(self.new_entry("const", [0], temp_reg))
+                    self.add_label(L_fin)
+                    self.add_entry(self.new_entry("copy", [f"%{temp_reg}"], var_reg))
 
 
-                self.add_variable(name, reg, type)
+
+                self.add_variable(name, var_reg, type)
 
                 
 
@@ -415,21 +448,82 @@ class Muncher():
 
                 #case  1: assigning an int 
                 if rvalue.type == "int":
+                    #directly evaluate the right-hand value
                     self.TMM_int(rvalue, var_reg)
-                elif rvalue.type == "bool":
-                    #TODO : write this case
-                    temp = self.new_free_register()
 
+                elif rvalue.type == "bool":
+                    #SAME logic as var declaration
+                    temp_reg=  self.new_free_register()
+
+                    L_int = self.new_label() 
+                    L_fin = self.new_label()
+
+                    self.add_entry(self.new_entry("const", [1], temp_reg))
+
+                    self.TMM_bool(rvalue, L_fin, L_int)
+
+                    self.add_label(L_int)
+                    self.add_entry(self.new_entry("const", [0], temp_reg))
+                    self.add_label(L_fin)
+                    self.add_entry(self.new_entry("copy", [f"%{temp_reg}"], var_reg))
 
 
             case StatementEval(expression=expression):
+                #type doesn't matter on eval statements (for now)
                 self.TMM_int(expression)
 
             case StatementIfElse(condition=condition, block = block, ifrest=ifrest):
-                raise NotImplementedError()
+                T_if  = self.new_label()
+                T_nextif = self.new_label()
+                T_endif =  self.new_label()
 
-            case StatementIfRest(ifelse=ifelse, block=block):
-                raise NotImplementedError()
+                #start by properly evaluating the condition block first
+                self.TMM_bool(condition, T_if, T_nextif)
+                self.add_label(T_if)
+
+                #munch everything in the block then jump to end
+                for command in block : 
+                    self.TMM_statement(command)
+                self.add_entry(self.new_entry("jmp", [T_endif], -1))
+
+
+
+                #pointer to the next if statement
+                cur_ifrest = ifrest
+
+                #do something similar for all other elseif clauses
+                while (cur_ifrest.ifelse != None or cur_ifrest.else_block != None):
+
+
+
+                    #case 1 : elif clause
+                    if ifrest.ifelse != None : 
+
+                        #shift our focus
+                        self.add_label(T_nextif)
+                        cur_ifelse = ifrest.ifelse
+                        cur_ifrest = cur_ifelse.ifrest
+
+                        #TODO : finish this part of the implementation
+                        pass
+
+
+
+
+
+
+                    #case 2 : else clause
+                    elif ifrest.else_block != None : 
+                        #just directly munch the block
+                        for command in ifrest.else_block : 
+                            self.TMM_statement(command)
+
+                        break
+
+
+
+                self.add_label(T_endif)
+
 
             case StatementWhile(condition=condition, block=block):
                 raise NotImplementedError()
@@ -496,6 +590,9 @@ class Muncher():
                 else :
                     self.add_entry(self.new_entry("jmp", [LF], -1))
 
+            case ExpressionVar(name=name):
+                pass
+
             case ExpressionUniOp(operator="boolean-not", argument = arg):
                 self.TMM_bool(arg, LF, LT)
 
@@ -539,8 +636,6 @@ class Muncher():
         
 
             
-
-
     def get_TAC_json(self):
         return self.output_json
 
