@@ -44,9 +44,11 @@ class Lexer:
 
     }
 
-    tokens = (                 
+    tokens = (          
+        #MISC       
         'IDENT' ,
         'NUMBER',
+        "COMMENT",
 
         #arithmetic operators
         'PLUS'  ,
@@ -166,6 +168,10 @@ class Lexer:
         t.type = Lexer.reserved.get(t.value, "IDENT")
 
         return t
+
+    def t_COMMENT(self, t):
+        r'\/\/(.*)\n'
+        pass
 
     def t_newline(self, t):
         r'\n'
@@ -350,7 +356,9 @@ class Parser:
                      | assign 
                      | print 
                      | ifelse
-                     | while"""
+                     | while
+                     | break
+                     | continue"""
 
         p[0] = p[1]
 
@@ -375,7 +383,15 @@ class Parser:
 
         p[0] = ast.StatementEval(ast.ExpressionCall("print", p[3]))
 
+    def p_break(self, p):
+        """break : BREAK"""
 
+        p[0] = ast.StatementBreak()
+
+    def p_continue(self, p):
+        """continue : CONTINUE"""
+
+        p[0] = ast.StatementContinue()
 
 
     def p_ifrest(self, p):
@@ -515,7 +531,8 @@ class SynChecker:
                 self.for_expression(expression)
 
             case _:
-                self.error_mes("ERROR", "unrecognized statement type", self.stmt_number)
+                pass
+                #self.error_mes("ERROR", "unrecognized statement type", self.stmt_number)
 
 
 
@@ -589,7 +606,6 @@ def _main():
 
 
 
-    ##DEFAULT STUFF from skeleton file, uncomment when parser is ready
     prgm = Parser.parse(prgm)
 
     if prgm is None:
@@ -600,7 +616,7 @@ def _main():
     if not SynChecker.check(prgm):
         exit(1)
 
-    #TODO : add option to choose between tmm and bmm (both already implemented)
+    #TODO : potentially implement the option for BMM munch ? 
     muncher = ast.Muncher()
     muncher.TMM(prgm)
     

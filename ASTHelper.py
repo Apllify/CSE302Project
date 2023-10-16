@@ -67,7 +67,13 @@ class StatementEval(Statement):
     def __str__(self):
         return str(self.expression)
 
+class StatementBreak(Statement):
+    def __init__(self):
+        pass
 
+class StatementContinue(Statement):
+    def __init__(self):
+        pass
 
 class StatementIfElse(Statement):
     def __init__(self, condition, block, ifrest):
@@ -253,6 +259,11 @@ class Muncher():
         #list of scopes of variables
         #each variable lookup maps "varname -> (var_reg, var_type)"
         self.variable_scopes = [{}]
+        
+        # a list of tuples of the form :
+        # (continue_label, break_label)
+        # which gets created with every single new scope
+        self.scope_labels = []
 
         self.output_json = []
 
@@ -261,7 +272,7 @@ class Muncher():
         self.output_json[0]["body"].append(entry)
 
     def add_label(self, label):
-        self.output_json[0]["body"].append(f"{label}:")
+        self.add_entry(self.new_entry("label", [label], -1))
 
 
     def new_entry(self, opcode, argslist, register_num=-1):
@@ -279,7 +290,7 @@ class Muncher():
         return entry
 
     def new_label(self):
-        label_text = f".L{self.label_counter}" 
+        label_text = f"%.L{self.label_counter}" 
         self.label_counter += 1
 
         return label_text
@@ -493,22 +504,30 @@ class Muncher():
 
                 #do something similar for all other elseif clauses
                 while (cur_ifrest.ifelse != None or cur_ifrest.else_block != None):
-
-
+                    
+                    #add a tp point to this clause
+                    self.add_label(T_nextif)
 
                     #case 1 : elif clause
                     if ifrest.ifelse != None : 
 
                         #shift our focus
-                        self.add_label(T_nextif)
-                        cur_ifelse = ifrest.ifelse
+                        cur_ifelse = cur_ifrest.ifelse
                         cur_ifrest = cur_ifelse.ifrest
 
-                        #TODO : finish this part of the implementation
-                        pass
+                        #new label for the next if
+                        T_if = self.new_label()
+                        T_nextif = self.new_label()
 
+                        #evaluate conditionnal
+                        cur_condition = cur_ifelse.condition
+                        self.TMM_bool(cur_condition, T_if, T_nextif)
+                        self.add_label(T_if)
 
-
+                        #MUNCH : nom nom nom
+                        for command in cur_ifelse.block : 
+                            self.TMM_statement(command)
+                        self.add_entry(self.new_entry("jmp", [T_endif], -1))
 
 
 
@@ -521,12 +540,51 @@ class Muncher():
                         break
 
 
-
+                self.add_label(T_nextif)
                 self.add_label(T_endif)
 
 
             case StatementWhile(condition=condition, block=block):
-                raise NotImplementedError()
+                #announce the new scope
+                continue_label = self.new_label()
+                break_label = self.new_label() 
+                entry_label = self.new_label()
+
+                self.variable_scopes.append(dict())
+                self.scope_labels.append((continue_label, break_label))
+
+                #check for the proper conditions of entry
+                self.add_label(continue_label)
+                self.TMM_bool(condition, entry_label, break_label)
+                self.add_label(entry_label)
+
+                #munch the content 
+                for command in block : 
+                    self.TMM_statement(command)
+
+                #check for conditions of RE-entry
+                self.TMM_bool(condition, entry_label, break_label)
+
+
+                #end of while statement :)
+                self.add_label(break_label)
+
+                #delete the scope we created before leaving
+                self.variable_scopes.pop()
+                self.scope_labels.pop()
+
+
+            case StatementBreak():
+                #make sure we are in a scope 
+                if len(self.scope_labels >= 1):
+                    break_label = self.scope_labels[-1][1] 
+                    self.add_entry(self.new_entry("jmp", [break_label], -1))
+
+            case StatementContinue():
+                #make sure we are in a scope 
+                if len(self.scope_labels >= 1):
+                    continue_label = self.scope_labels[-1][0] 
+                    self.add_entry(self.new_entry("jmp", [continue_label], -1))
 
 
             case _ :
@@ -591,7 +649,9 @@ class Muncher():
                     self.add_entry(self.new_entry("jmp", [LF], -1))
 
             case ExpressionVar(name=name):
-                pass
+                #jump to the right place depending on (var == 0)
+                self.add_entry(self.new_entry("jnz", [LT], -1))
+                self.add_entry(self.new_entry("jmp", [LF], -1))
 
             case ExpressionUniOp(operator="boolean-not", argument = arg):
                 self.TMM_bool(arg, LF, LT)
