@@ -75,7 +75,7 @@ def gen_asm(tac_json, output_path):
 
     asm_lines.append("main:")
 
-    add_asm("pushq", r"%rsp")
+    add_asm("pushq", r"%rbp")
     add_asm("movq", r"%rsp", r"%rbp")
 
     asm_lines += "", ""
@@ -251,8 +251,11 @@ def gen_asm(tac_json, output_path):
             
             source = get_temp_address(args[0])
 
+            add_asm("pushq", r"%rax")
             add_asm("movq", source, r"%rdi")
-            add_asm("callq", "bx_print_int")
+            add_asm("callq", "__bx_print_int")
+            add_asm("popq", r"%rax")
+
 
 
             
@@ -280,6 +283,7 @@ def gen_asm(tac_json, output_path):
     add_asm("popq", r"%rbp")
     add_asm("movq", r"$0", r"%rax")
     add_asm("retq")
+    asm_lines.append("")
 
     #write everything to the output file 
     with open(output_path, "w") as output_file : 
@@ -298,6 +302,7 @@ def gen_asm(tac_json, output_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog = "tac2x64")
     parser.add_argument("input", help = "input file (.tac.json)")
+    parser.add_argument("output", help = "output file (.s)")
     args = parser.parse_args()
 
     try :
@@ -306,7 +311,7 @@ if __name__ == "__main__":
     except:
         raise Exception("Error : Invalid input filename provided !")
 
-    output_file = args.input.split(".")[0] + ".s"
+    output_file = args.output
 
     tac_json = json.loads(tac_string)
 

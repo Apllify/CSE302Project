@@ -1,3 +1,9 @@
+# TODO : 
+# - output tac file does not contain the list of registers and labels at the end
+# - haven't checked for output correctness on real examples yet
+
+
+
 ###ALL of the helper classes that we'll use to represent the ACT content
 class Root : 
     def __init__(self, procedure):
