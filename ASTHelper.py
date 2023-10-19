@@ -1,7 +1,8 @@
 # TODO : 
 # - output tac file does not contain the list of registers and labels at the end
-# - haven't checked for output correctness on real examples yet
-
+# - haven't checked for output correctness on real examples yet 
+# - can make mild optimization for if statement munching : if the "if" statement
+# doesn't have any follow-up, then no need to generate nextif label
 
 
 ###ALL of the helper classes that we'll use to represent the ACT content
@@ -258,9 +259,13 @@ class Muncher():
 
     ###START OF HELPER functions###
     def clean_slate(self):
-        #creating all of the important variables
-        self.used_registers = [] 
-        self.label_counter = 0
+        
+        self.used_registers = [] # removed registers will disappear from here
+        self.all_used_registers = [] # all registers ever allocated will be here
+
+
+        self.label_counter = 0 
+        self.used_labels = []
 
         #list of scopes of variables
         #each variable lookup maps "varname -> (var_reg, var_type)"
@@ -296,8 +301,10 @@ class Muncher():
         return entry
 
     def new_label(self):
-        label_text = f"%.L{self.label_counter}" 
+        label_text = f"%.L{self.label_counter}"         
         self.label_counter += 1
+
+        self.used_labels.append(label_text)
 
         return label_text
 
@@ -307,6 +314,7 @@ class Muncher():
         #first allocation
         if len(self.used_registers) == 0:
             self.used_registers.append(0)
+            self.all_used_registers.append(0)
             return 0
 
         #start by looking for gaps in allocated registers (ex : 1,3,4 -> 2)  
@@ -316,11 +324,14 @@ class Muncher():
                 new_reg = self.used_registers[i] - 1
 
                 self.used_registers = self.used_registers[:i] + [new_reg] + self.used_registers[i:]
+                self.all_used_registers.append(new_reg)
                 return new_reg
 
 
         #otherwise allocate new number
         new_reg = self.used_registers[-1] + 1
+
+        self.all_used_registers.append(new_reg)
         self.used_registers.append(new_reg)
         return new_reg
 
@@ -403,10 +414,14 @@ class Muncher():
 
 
     def TMM(self, root:Root):
-        #clean everything before starting the TMM
+        #clean everything and start the TMM
         self.clean_slate()
 
         self.TMM_statement(root.procedure)
+
+        #log all of the registers and labels that we used during execution
+        self.output_json[0]["temps"] = list(map (lambda x : "%" + str(x), self.all_used_registers))
+        self.output_json[0]["labels"] = self.used_labels
 
 
     def TMM_statement(self, statement):
@@ -508,45 +523,55 @@ class Muncher():
                 #pointer to the next if statement
                 cur_ifrest = ifrest
 
-                #do something similar for all other elseif clauses
-                while (cur_ifrest.ifelse != None or cur_ifrest.else_block != None):
-                    
-                    #add a tp point to this clause
+                #if there's no continuation, emit the if next NOW
+                if cur_ifrest.ifelse == None and cur_ifrest.else_block == None : 
                     self.add_label(T_nextif)
+                else:  
+                    #do something similar for all other elseif clauses
+                    while (cur_ifrest.ifelse != None or cur_ifrest.else_block != None):
+                        
+                        #add a tp point to this clause
+                        self.add_label(T_nextif)
 
-                    #case 1 : elif clause
-                    if ifrest.ifelse != None : 
+                        #case 1 : elif clause
+                        if cur_ifrest.ifelse != None : 
 
-                        #shift our focus
-                        cur_ifelse = cur_ifrest.ifelse
-                        cur_ifrest = cur_ifelse.ifrest
+                            #shift our focus
+                            cur_ifelse = cur_ifrest.ifelse
+                            cur_ifrest = cur_ifelse.ifrest
 
-                        #new label for the next if
-                        T_if = self.new_label()
-                        T_nextif = self.new_label()
+                            #new label for the next if
+                            T_if = self.new_label()
+                            T_nextif = self.new_label()
 
-                        #evaluate conditionnal
-                        cur_condition = cur_ifelse.condition
-                        self.TMM_bool(cur_condition, T_if, T_nextif)
-                        self.add_label(T_if)
+                            #evaluate conditionnal
+                            cur_condition = cur_ifelse.condition
+                            self.TMM_bool(cur_condition, T_if, T_nextif)
+                            self.add_label(T_if)
 
-                        #MUNCH : nom nom nom
-                        for command in cur_ifelse.block : 
-                            self.TMM_statement(command)
-                        self.add_entry(self.new_entry("jmp", [T_endif], -1))
-
-
-
-                    #case 2 : else clause
-                    elif ifrest.else_block != None : 
-                        #just directly munch the block
-                        for command in ifrest.else_block : 
-                            self.TMM_statement(command)
-
-                        break
+                            #MUNCH : nom nom nom
+                            for command in cur_ifelse.block : 
+                                self.TMM_statement(command)
+                            self.add_entry(self.new_entry("jmp", [T_endif], -1))
 
 
-                self.add_label(T_nextif)
+                            #make sure that this isn't the last if statement 
+                            if cur_ifrest.else_block == None and cur_ifrest.ifelse == None : 
+                                self.add_label(T_nextif)
+                                break
+
+
+
+                        #case 2 : else clause
+                        elif cur_ifrest.else_block != None : 
+
+                            #just directly munch the block
+                            for command in cur_ifrest.else_block : 
+                                self.TMM_statement(command)
+
+                            break
+
+
                 self.add_label(T_endif)
 
 
@@ -582,7 +607,7 @@ class Muncher():
 
             case StatementBreak():
                 #make sure we are in a scope 
-                if len(self.scope_labels >= 1):
+                if len(self.scope_labels) >= 1:
                     break_label = self.scope_labels[-1][1] 
                     self.add_entry(self.new_entry("jmp", [break_label], -1))
 
@@ -656,7 +681,9 @@ class Muncher():
 
             case ExpressionVar(name=name):
                 #jump to the right place depending on (var == 0)
-                self.add_entry(self.new_entry("jnz", [LT], -1))
+
+                var_reg = self.find_variable(name)[0]
+                self.add_entry(self.new_entry("jnz", [f"%{var_reg}",LT], -1))
                 self.add_entry(self.new_entry("jmp", [LF], -1))
 
             case ExpressionUniOp(operator="boolean-not", argument = arg):
