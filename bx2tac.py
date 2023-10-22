@@ -40,7 +40,10 @@ class Lexer:
         "else":"ELSE",
         "while": "WHILE",
         "break": "BREAK",
-        "continue" : "CONTINUE"
+        "continue" : "CONTINUE",
+        
+        "true" : "TRUE",
+        "false" : "FALSE"
 
     }
 
@@ -67,9 +70,6 @@ class Lexer:
 
         "EQUAL",
 
-        #boolean terminals
-        "TRUE",
-        "FALSE",
 
         #boolean operators
         "ANDBOOL",
@@ -404,7 +404,7 @@ class Parser:
         elif len(p) == 3:
             p[0] = ast.StatementIfRest(ifelse = p[2])
         elif len(p) == 5:
-            p[0] = ast.StatementIfRest(block = p[3])
+            p[0] = ast.StatementIfRest(else_block = p[3])
 
     def p_while(self, p):
         """while : WHILE LPAREN expr RPAREN LCURLYBRACKET statement_star RCURLYBRACKET"""
