@@ -8,12 +8,13 @@ class Jump :
         "jz", "jnz"
     ]
 
-    def __init__(self, jump_type, arg = []):
-        if jump_type not in jump_types:
+    def __init__(self, jump_type, args = []):
+
+        if jump_type not in Jump.jump_types:
             raise SyntaxError(f"Command {jump_type} not a recognized jump")
 
         self.jump_type = jump_type
-        self.arg = arg
+        self.args = args
 
 
 class Block: 
@@ -33,14 +34,103 @@ class CFG :
 
         self.block_list = block_list
         self.edges = edges
+        
+    def add_block(self, block):
+        self.block_list.append(block)
+
+    def get_edge(self, i1, i2):
+        self.edges.get((i1, i2))
+    
+    def preds(self, i):
+        """
+        Get the predecessors of a block
+        """
+        predecessors = []
+
+        for couple in self.edges :
+            if couple[1] == i:
+                predecessors.append(couple[0])
+
+        return predecessors
+
+    def succs(self, i):
+        """
+        Get the successors of a block
+        """
+
+        successors = []
+
+        for couple in self.edges :
+            if couple[0] == i:
+                successors.append(couple[1])
+
+        return successors
+
+
+def TAC_command(opcode, args, result_reg=-1):
+    """
+    Generates the dict corresponding to a single TAC command
+    """
+    #generate the fields of an entry
+    entry = {}
+    entry["opcode"] = opcode
+    entry["args"]  = args
+
+    #-1 target registry is code for "discard result"
+    if result_reg >= 0 :
+        entry["result"] = f"%{result_reg}"
+    else:
+        entry["result"] = None
+
+    return entry
 
 
 def TAC2Blocks(TAC_dict):
     """
+    Assumes the only procedure is the main procedure
     input : the dictionary form of a tac program
     output : a list of block type elements 
     """
-    pass
+    body = TAC_dict[0]["body"]
+
+    #find/add entry label if applicable
+    if body[0]["opcode"] != "label":
+        entry_label = TAC_command("label", ["%.Lentry"], -1)
+    else : 
+        entry_label = body[0]
+        body = body[1:]
+
+    #start by adding all the blocks WITHOUT the edges
+    all_blocks = []
+    cur_block = Block(entry_label, [])
+    i=0 
+
+    while i < len(body) :
+        command = body[i]
+        opcode = command["opcode"]
+
+        if opcode in Jump.jump_types:
+            #eat up all successor jump commands, then finish block
+            cur_block.content.append(command)
+
+            while i < len(body):
+                next_command = body[i+1]
+            
+            
+
+        elif opcode == "ret":
+            #end the conversion
+            cur_block.content.append(command)
+            all_blocks.append(cur_block)
+            break
+
+        elif opcode == "label":
+            #do something
+            pass
+        else : 
+            cur_block.content.append(command)
+
+        i += 1
 
 
 
