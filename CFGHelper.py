@@ -1,7 +1,8 @@
 class Block: 
     def __init__(self, entry_labels=None, content=None, exits=None):
-        #have to do because list defaults in python are broken
-        self.entry_labels = entry_labels if entry_labels else []
+        #entry labels is special, instead of storing full TAC commands, 
+        #it only stores the label names 
+        self.entry_labels = entry_labels if entry_labels else [] 
         self.content = content if content else []
         self.exits = exists if exits else []
 
@@ -11,8 +12,6 @@ class Block:
         return f"Entry Labels : {self.entry_labels} \nContent : \n {(br.join(string_content)) }\nExit commands : {self.exits}\n\n"
 
 class CFG : 
-
-
 
     def __init__(self, block_list=[], edges=[]):
         """
@@ -25,12 +24,54 @@ class CFG :
 
         self.block_list = block_list
         self.edges = edges
-        
-    def add_block(self, block):
-        self.block_list.append(block)
+
+        self.labelid_dict = dict() #maps (label) -> (id) 
+
+    def label_to_id(self, label):
+        """
+        Finds the internal id of a block from one of its entry labels.
+        Returns : An int if there is a match, "None" otherwise
+        """
+
+        #check if we've already computed this value before
+        query = self.labelid_dict.get(label)
+        if query : 
+            return query
+
+        #otherwise manually search through all of our blocks
+        for i, block in enumerate(self.block_list):
+            if label in block.entry_labels :
+                self.labelid_dict[label] = i
+                return i 
+
+        #no match found 
+        return None
 
     def get_edge(self, i1, i2):
+        """
+        Returns None if no edge exists
+        """
         self.edges.get((i1, i2))
+
+
+    def add_edge(self, jmp_tac, i1, i2):
+        if self.get_edge(i1, i2): 
+            self.edges[(i1, i2)].append(jmp_tac)
+        else : 
+            self.edges[(i1, i2)] = [jmp_tac]
+
+    def add_edge_hybrid(self, jmp_tac, i1, L2):
+        """
+        Actually quite useful in the context of this program.
+        If no block matches L2, then doesn't do anything
+        """
+        i2 = self.label_to_id(L2)
+        if i2 :
+            self.add_edge(jmp_tac, i1, i2)
+
+
+        
+
     
     def preds(self, i):
         """
@@ -113,7 +154,11 @@ class TAC2CFG:
 
 
 
-    def convert(self):
+    def convert_naive(self):
+        """
+        Generates a list of all the correct CFG blocks,
+        Does not generate the CFG graph itself 
+        """
 
         #start with an empty block,
         #all blocks will be progressively added to the full list
@@ -129,7 +174,8 @@ class TAC2CFG:
             #check whether our current block is still in labelling phase
             if cur_block.content == [] and cur_block.exits == []:
                 if opcode == "label" :
-                    cur_block.entry_labels.append(command)
+                    #add only the label name
+                    cur_block.entry_labels.append(command["args"][0])
                     
                     i += 1
                     continue
@@ -137,7 +183,7 @@ class TAC2CFG:
                 else : 
                     #make sure there is at least one entry label
                     if len(cur_block.entry_labels) == 0:
-                        cur_block.entry_labels.append(TAC_command("label", [self.new_label()]))
+                        cur_block.entry_labels.append(self.new_label())
 
 
 
@@ -197,6 +243,25 @@ class TAC2CFG:
                     cur_block.content.append(command)
 
             i += 1
+
+    def connect_blocks(self):
+        """
+        Uses the block list created by convert naive
+        to generate a proper CFG
+        """
+        #TODO TODO TODO : implement me !
+        self.CFG.block_list = self.all_blocks
+
+
+
+    def create_CFG(self):
+        #start by creating all of the blocks independently
+        self.convert_naive()
+
+        #merge them 
+        self.connect_blocks()
+
+        return self.CFG
 
         
 
