@@ -1,35 +1,26 @@
-class Jump :
-
-    conditional_jumps = [
-        "jl", "jle",
-        "jnl", "jnle",
-        "jz", "jnz"
-    ]
-
-    # normal jump : jmp
-
-    def __init__(self, jump_type, args = []):
-
-        if jump_type not in Jump.jump_types:
-            raise SyntaxError(f"Command {jump_type} not a recognized jump")
-
-        self.jump_type = jump_type
-        self.args = args
-
-
 class Block: 
-    def __init__(self, entry_label, content):
-        self.entry_label = entry_label
-        self.content = content
+    def __init__(self, entry_labels=None, content=None, exits=None):
+        #have to do because list defaults in python are broken
+        self.entry_labels = entry_labels if entry_labels else []
+        self.content = content if content else []
+        self.exits = exists if exits else []
+
+    def __str__(self):
+        br = "\n"
+        string_content = list(map(str, self.content))
+        return f"Entry Labels : {self.entry_labels} \nContent : \n {(br.join(string_content)) }\nExit commands : {self.exits}\n\n"
 
 class CFG : 
-    def __init__(self, block_list, edges : dict[tuple[int, int], Jump] ):
+
+
+
+    def __init__(self, block_list=[], edges=[]):
         """
         edges is a mapping of the form  
-        (i1, i2) -> jump3
+        (i1, i2) -> [jump1, jump2, jump3]
 
         where i1, i2 are indexes of elements in block_list
-        jump3 is an instance of the jump class
+        jumpN are all tac commands with opcode == jmp or cond_jmp 
         """
 
         self.block_list = block_list
@@ -77,7 +68,7 @@ def TAC_command(opcode, args, result_reg=-1):
     entry["args"]  = args
 
     #-1 target registry is code for "discard result"
-    if result_reg >= 0 :
+    if result_reg != -1 :
         entry["result"] = f"%{result_reg}"
     else:
         entry["result"] = None
@@ -85,12 +76,18 @@ def TAC_command(opcode, args, result_reg=-1):
     return entry
 
 
-class TAC2Blocks:
+class TAC2CFG:
     """
     Assumes the only procedure is the main procedure
     input : the dictionary form of a tac program
     output : a list of block type elements 
     """
+
+    conditional_jumps = [
+        "jl", "jle",
+        "jnl", "jnle",
+        "jz", "jnz"
+    ]
 
     def __init__(self, TAC_dict):
         self.TAC_dict = TAC_dict
@@ -100,6 +97,7 @@ class TAC2Blocks:
         self.label_count = 0
 
         self.all_blocks = []
+        self.CFG = CFG()
 
 
     #new label, prefixed with 
@@ -116,55 +114,128 @@ class TAC2Blocks:
 
 
     def convert(self):
-        #find/add entry label if applicable
-        if self.body[0]["opcode"] != "label":
-            entry_label = TAC_command("label", [self.new_label()], -1)
-        else : 
-            entry_label = self.body[0]
-            self.body = self.body[1:]
 
-        #start by adding all the blocks WITHOUT the edges
-        cur_block = Block(entry_label, [])
-        i=0 
+        #start with an empty block,
+        #all blocks will be progressively added to the full list
+        cur_block = Block()
 
+        i = 0
         while i < len(self.body) :
+
             command = self.body[i]
             opcode = command["opcode"]
 
-            if opcode in Jump.conditional_jumps:
-                #if the last command in block was also a cond jump just add
-                if (True):
-                    cur_block.content.append(command)
-                else: 
-                    #otherwise create new block with new label and add ourselves to it
-                    self.all_blocks.append(cur_block)
-                    cur_block = CFG([], dict()) 
-                    cur_block.content.append(TAC_command("label", [self.new_label()], -1))
-                    cur_block.content.append(command)
+
+            #check whether our current block is still in labelling phase
+            if cur_block.content == [] and cur_block.exits == []:
+                if opcode == "label" :
+                    cur_block.entry_labels.append(command)
+                    
+                    i += 1
+                    continue
+
+                else : 
+                    #make sure there is at least one entry label
+                    if len(cur_block.entry_labels) == 0:
+                        cur_block.entry_labels.append(TAC_command("label", [self.new_label()]))
 
 
 
-            elif opcode == "jmp":
+
+            #check for non-linear instruction
+            if opcode in TAC2CFG.conditional_jumps :
+
+                cur_block.exits.append(command)
+              
+
+
+            elif opcode == "jmp" :
+
+                #move on to new block
+                cur_block.exits.append(command)
+                self.all_blocks.append(cur_block)
+                cur_block = Block()
+
+            else : 
+
+                #FROM here on, we need to make sure that there are no trailing conditionals
+                #(since we can't follow them up)
+                if cur_block.exits != [] or opcode == "label" : 
+
+                    #check if we need to add an explicit jump-through
+                    if len(cur_block.exits) == 0  or cur_block.exits[-1]["opcode"] in TAC2CFG.conditional_jumps :
+                        
+                        jump_label_to_add = []
+                        if opcode == "label" :
+                            jump_label = command["args"][0]
+                        else : 
+                            jump_label = self.new_label()
+                            jump_label_to_add.append(jump_label)
+                        
+                        cur_block.exits.append(TAC_command("jmp", [jump_label]))
+
+                        self.all_blocks.append(cur_block)
+                        cur_block = Block(jump_label_to_add)
+                        continue
+
+                    else : 
+                        self.all_blocks.append(cur_block)
+                        cur_block = Block()
+                        continue
 
                 
 
-            elif opcode == "ret":
-                #end the conversion
-                cur_block.content.append(command)
-                all_blocks.append(cur_block)
-                break
+                if opcode == "ret" :
+                    #check that no other exits before this 
+                    cur_block.exits.append(command)
+                    self.all_blocks.append(cur_block)
+                    cur_block = Block()
 
-            elif opcode == "label":
-                #do something
-                pass
-            else : 
-                cur_block.content.append(command)
+
+                else : 
+                    #guaranteed to have a linear instruction
+                    cur_block.content.append(command)
 
             i += 1
+
+        
+
 
 
 
 
 if __name__ == "__main__":
-    # <-- parse command line arguments here 
-    pass
+    #DEBUG CODE
+    fib = [dict()]
+    body = []
+
+    body.append(TAC_command("const", [10], "n"))
+    body.append(TAC_command("const", [0], 0))
+    body.append(TAC_command("const", [1], 1))
+    body.append(TAC_command("const", [1], 2))
+    body.append(TAC_command("label", ["%.L1"]))
+    body.append(TAC_command("jz", ["%n", "%.L3"]))
+    body.append(TAC_command("label", ["%.L2"]))
+    body.append(TAC_command("sub", ["%n", "%2"], "n"))
+    body.append(TAC_command("add", ["%0", "%1"], 3))
+    body.append(TAC_command("copy", ["%1"], 0))
+    body.append(TAC_command("copy", ["%3"], 1))
+    body.append(TAC_command("jmp", ["%.L1"]))
+    body.append(TAC_command("label", ["%.L3"]))
+
+
+    body.append(TAC_command("ret", ["%0"]))
+
+    fib[0]["body"] = body
+    fib[0]["labels"] = []
+
+
+    #run our cfg on it 
+    converter = TAC2CFG(fib)
+    converter.convert()
+    for block in converter.all_blocks:
+        print(block)
+        print()
+
+
+
