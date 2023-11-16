@@ -4,7 +4,7 @@ class Block:
         #it only stores the label names 
         self.entry_labels = entry_labels if entry_labels else [] 
         self.content = content if content else []
-        self.exits = exists if exits else []
+        self.exits = exits if exits else []
 
     def __str__(self):
         br = "\n"
@@ -13,7 +13,8 @@ class Block:
 
 class CFG : 
 
-    def __init__(self, block_list=[], edges=[]):
+
+    def __init__(self, block_list=[]):
         """
         edges is a mapping of the form  
         (i1, i2) -> [jump1, jump2, jump3]
@@ -23,7 +24,7 @@ class CFG :
         """
 
         self.block_list = block_list
-        self.edges = edges
+        self.edges = dict()
 
         self.labelid_dict = dict() #maps (label) -> (id) 
 
@@ -49,14 +50,16 @@ class CFG :
 
     def get_edge(self, i1, i2):
         """
-        Returns None if no edge exists
+        Returns a list of jump tac commands, 
+        None if no edge exists
         """
-        self.edges.get((i1, i2))
+        return self.edges.get((i1, i2))
 
 
     def add_edge(self, jmp_tac, i1, i2):
         if self.get_edge(i1, i2): 
-            self.edges[(i1, i2)].append(jmp_tac)
+            if jmp_tac not in self.get_edge(i1, i2):
+                self.edges[(i1, i2)].append(jmp_tac)
         else : 
             self.edges[(i1, i2)] = [jmp_tac]
 
@@ -70,16 +73,68 @@ class CFG :
             self.add_edge(jmp_tac, i1, i2)
 
 
-        
+    def connect_blocks(self):
+        """
+        Iterates through all of the blocks and creates
+        the internal edges associated with the jumps
+        """
+
+        for i in range(len(self.block_list)):
+            for jmp_cmd in self.block_list[i].exits:
+
+                #find the target label of the current jump
+                jmp_type = jmp_cmd["opcode"]
+                if jmp_type == "ret":
+                    continue
+
+                target_label= (jmp_cmd["args"][0]) if jmp_type == "jmp" else (jmp_cmd["args"][1])
+
+                #create the edge
+                self.add_edge_hybrid(jmp_cmd, i, target_label)
+
+
+    def to_tac(self):
+        """
+        Convert the graph to a TAC dictionary,
+        currently using very naive algorithm
+        """
+
+        tac_dict = [dict()]
+        body = []
+        labels = []
+
+        for block in self.block_list : 
+            #add the labels to both the code and the labels list 
+            for label in block.entry_labels : 
+                labels.append(label)
+                body.append(TAC_command("label", [label]))
+
+            #same for body and exits
+            for tac_cmd in block.content : 
+                body.append(tac_cmd)
+
+            for tac_cmd in block.exits:
+                body.append(tac_cmd)
+
+
+
+        tac_dict[0]["body"] = body
+        tac_dict[0]["labels"] = labels
+
+        return tac_dict
+
+
+
+
 
     
     def preds(self, i):
         """
-        Get the predecessors of a block
+        Get the ids of the predecessors of a block
         """
         predecessors = []
 
-        for couple in self.edges :
+        for couple in self.edges.keys() :
             if couple[1] == i:
                 predecessors.append(couple[0])
 
@@ -87,7 +142,7 @@ class CFG :
 
     def succs(self, i):
         """
-        Get the successors of a block
+        Get the ids of the successors of a block
         """
 
         successors = []
@@ -97,6 +152,26 @@ class CFG :
                 successors.append(couple[1])
 
         return successors
+
+    def __str__(self):
+        """
+        String of all the blocks and edges of a CFG
+        """
+
+        blocks_string = "\n".join(list(map(str, self.block_list)))
+        
+        edges_string = ""
+        for edge in self.edges.keys():
+            edges_string += f"{edge} : \n{' '.join(list(map(TAC_to_str, self.edges[edge])))}\n"
+
+        return "\n".join([
+            "Blocks of CFG : ",
+            blocks_string,
+            "",
+            "Edges of CFG : ",
+            edges_string
+        ])
+
 
 
 def TAC_command(opcode, args, result_reg=-1):
@@ -116,6 +191,16 @@ def TAC_command(opcode, args, result_reg=-1):
 
     return entry
 
+def TAC_to_str(tac_cmd):
+    """
+    Converts the dict corresponding to a TAC into a string
+    """
+    return f"[opcode: {tac_cmd['opcode']}, args: {', '.join(tac_cmd['args'])}, result: {tac_cmd['result']}]"
+def TACs_to_str(tac_cmds):
+    """
+    Converts a list of tac commands to a string
+    """
+    return "\n".join(list(map(TAC_to_str, tac_cmds)))
 
 class TAC2CFG:
     """
@@ -244,24 +329,20 @@ class TAC2CFG:
 
             i += 1
 
-    def connect_blocks(self):
-        """
-        Uses the block list created by convert naive
-        to generate a proper CFG
-        """
-        #TODO TODO TODO : implement me !
-        self.CFG.block_list = self.all_blocks
-
 
 
     def create_CFG(self):
+        """
+        Create a CFG instance based on the input 
+        TAC program. 
+        """
         #start by creating all of the blocks independently
         self.convert_naive()
+        self.CFG.block_list = self.all_blocks
 
         #merge them 
-        self.connect_blocks()
+        self.CFG.connect_blocks()
 
-        return self.CFG
 
         
 
@@ -297,10 +378,8 @@ if __name__ == "__main__":
 
     #run our cfg on it 
     converter = TAC2CFG(fib)
-    converter.convert()
-    for block in converter.all_blocks:
-        print(block)
-        print()
+    converter.create_CFG()
+    print(str(converter.CFG.to_tac()))
 
 
 
