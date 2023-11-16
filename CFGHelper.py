@@ -93,7 +93,7 @@ class CFG :
                 self.add_edge_hybrid(jmp_cmd, i, target_label)
 
 
-    def to_tac(self):
+    def get_tac(self):
         """
         Convert the graph to a TAC dictionary,
         currently using very naive algorithm
@@ -104,6 +104,10 @@ class CFG :
         labels = []
 
         for block in self.block_list : 
+            #ignore none blocks (which WILL exist)
+            if not block : 
+                continue 
+
             #add the labels to both the code and the labels list 
             for label in block.entry_labels : 
                 labels.append(label)
@@ -124,19 +128,16 @@ class CFG :
         return tac_dict
 
 
-
-
-
     
     def preds(self, i):
         """
         Get the ids of the predecessors of a block
         """
-        predecessors = []
+        predecessors = set()
 
         for couple in self.edges.keys() :
             if couple[1] == i:
-                predecessors.append(couple[0])
+                predecessors.add(couple[0])
 
         return predecessors
 
@@ -145,13 +146,90 @@ class CFG :
         Get the ids of the successors of a block
         """
 
-        successors = []
+        successors = set()
 
-        for couple in self.edges :
+        for couple in self.edges.keys() :
             if couple[0] == i:
-                successors.append(couple[1])
+                successors.add(couple[1])
 
         return successors
+
+    def coalescing_pass(self):
+
+        to_merge = set()
+
+        for edge in self.edges.keys():
+            if len(self.succs(edge[0])) == 1 and len(self.preds(edge[1])) == 1 :
+                to_merge.add(edge)
+
+        for medge in to_merge:  
+            #remove the edge between the two
+            del self.edges[medge]
+
+            #give b2's exits to b1 and merge their contents
+            self.block_list[medge[0]].exits = self.block_list[medge[1]].exits
+            self.block_list[medge[0]].content += self.block_list[medge[1]].content
+
+            #replace all edges which had b2 as the "sender"
+            for edge in self.edges.keys() : 
+                 if edge[0] == medge[1]:
+                    self.edges[(medge[0], edge[1])] = self.edges[(medge[1], edge[1])]
+                    del self.edges[(medge[1], edge[1])]
+
+            #delete b2 forever (don't shift indexes) :(
+            self.block_list[medge[1]] = None
+
+    def reachable_blocks(self, start_index, seen = None):
+        """
+        Returns a list of all the reachable block indexes from
+        the input starting point
+        """
+
+        if not seen : 
+            seen = {start_index}
+        else : 
+            seen.add(start_index)
+
+        successors = self.succs(start_index)
+
+        for new_point in (successors - seen) :
+            #let the recursive call modify the seen set 
+            self.reachable_blocks(new_point, seen)
+
+        return seen 
+        
+
+
+
+    def UCE_pass(self):
+        """
+        The Unreachable Code Elimination pass
+        """
+
+        #first element of our blocks list can NEVER be none 
+        reachables = self.reachable_blocks(0)
+
+        #delete all code blocks that aren't reachable
+        for i in range(len(self.block_list)) : 
+            if i not in reachables : 
+                self.block_list[i] = None
+
+        #delete all edges which involve unreachable blocks
+        for edge in self.edges.keys():
+            if edge[0] not in reachables or edge[1] not in reachables : 
+                del self.edges[edge] 
+        
+
+
+    def optimize(self):
+        """
+        Performs multiple passes through the graph 
+        to improve it 
+        """
+
+        self.coalescing_pass()
+        self.UCE_pass()
+
 
     def __str__(self):
         """
@@ -236,8 +314,6 @@ class TAC2CFG:
         self.label_count += 1
         return label_name
         
-
-
 
     def convert_naive(self):
         """
@@ -330,21 +406,31 @@ class TAC2CFG:
             i += 1
 
 
-
-    def create_CFG(self):
+    def optimize_CFG(self):
         """
-        Create a CFG instance based on the input 
+        Create and optimize a CFG instance based on the input 
         TAC program. 
         """
         #start by creating all of the blocks independently
         self.convert_naive()
         self.CFG.block_list = self.all_blocks
 
-        #merge them 
+        #generate + optimize the graph
         self.CFG.connect_blocks()
+        self.CFG.optimize()
+
+    def get_tac(self):
+        """
+        Obtain the optimized TAC output
+        """
+        try : 
+            return self.CFG.get_tac()
+        except : 
+            return self.TAC_dict
 
 
         
+
 
 
 
@@ -378,8 +464,9 @@ if __name__ == "__main__":
 
     #run our cfg on it 
     converter = TAC2CFG(fib)
-    converter.create_CFG()
-    print(str(converter.CFG.to_tac()))
+    converter.optimize_CFG()
+
+    print(str(converter.get_tac()))
 
 
 

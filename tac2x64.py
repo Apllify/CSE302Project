@@ -1,5 +1,6 @@
 import argparse
 import json
+import CFGHelper
 
 
 #TODO :
@@ -313,6 +314,15 @@ if __name__ == "__main__":
 
     output_file = args.output
 
+    #load our json tac
     tac_json = json.loads(tac_string)
 
-    gen_asm(tac_json, output_file)
+    #perform a CFG optimization pass on our tac
+    converter = CFGHelper.TAC2CFG(tac_json)
+    converter.create_CFG()
+
+    final_tac_json = converter.get_tac()
+
+
+    #convert the final tac to assembly
+    gen_asm(final_tac_json, output_file)
